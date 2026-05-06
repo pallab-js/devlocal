@@ -1,0 +1,26 @@
+{
+  "common": {
+    "dashboard": "Dashboard",
+    "settings": "Settings",
+    "containers": "Containers",
+    "images": "Images",
+    "networks": "Networks",
+    "volumes": "Volumes",
+    "environments": "Environments",
+    "logs": "Logs"
+  },
+  "dashboard": {
+    "title": "Dashboard",
+    "hostResources": "Host Resources",
+    "cpuUsage": "CPU Usage",
+    "memoryUsage": "Memory Usage",
+    "diskUsage": "Disk Usage"
+  },
+  "settings": {
+    "title": "Settings",
+    "appearance": "Appearance",
+    "language": "Language",
+    "theme": "Theme",
+    "docker": "Docker Configuration"
+  }
+}

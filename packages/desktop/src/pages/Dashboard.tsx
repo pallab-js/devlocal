@@ -3,6 +3,7 @@ import { listen } from "@tauri-apps/api/event";
 import { open } from "@tauri-apps/plugin-dialog";
 import { useQueryClient } from "@tanstack/react-query";
 import { useVirtualizer } from "@tanstack/react-virtual";
+import { useTranslation } from "react-i18next";
 import { useContainers, useContainerMutations, useHostStats, useNetworkTopology } from "../hooks/useQueries";
 import { ipc, type ContainerInfo, type DockerEvent } from "../lib/ipc";
 import { Skeleton } from "../components/Skeleton";
@@ -77,6 +78,7 @@ const cardClass = "bg-surface border border-border rounded-lg p-4 md:p-5";
 const secTitleClass = "text-[11px] font-mono uppercase tracking-[1.2px] text-text-3 mb-4 block";
 
 export function Dashboard() {
+  const { t } = useTranslation();
   const qc = useQueryClient();
   const [paused, setPaused] = useState(false);
   const [detailsId, setDetailsId] = useState<string | null>(null);
@@ -163,11 +165,11 @@ export function Dashboard() {
 
   return (
     <div className="flex flex-col gap-6">
-      <h1 className="text-[18px] font-bold text-text m-0">Dashboard</h1>
+      <h1 className="text-[18px] font-bold text-text m-0">{t('dashboard.title')}</h1>
 
       {/* Host Stats */}
       <section className={cardClass}>
-        <h2 className={secTitleClass}>Host Resources</h2>
+        <h2 className={secTitleClass}>{t('dashboard.hostResources')}</h2>
         {sLoading ? (
           <div className="grid grid-cols-3 gap-4">
             {[0,1,2].map(i => <div key={i}><Skeleton height={12} width="60%" /><div className="mt-2"><Skeleton height={6} /></div></div>)}
@@ -184,7 +186,7 @@ export function Dashboard() {
       {/* Containers */}
       <section className={cardClass}>
         <div className="flex items-center mb-4">
-          <h2 className={`${secTitleClass} m-0 flex-1`}>Containers</h2>
+          <h2 className={`${secTitleClass} m-0 flex-1`}>{t('common.containers')}</h2>
           {/* Count summary */}
           {!cLoading && containers && (
             <span className="text-[11px] font-mono text-text-3 mr-3">

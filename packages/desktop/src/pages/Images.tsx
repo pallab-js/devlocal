@@ -193,8 +193,8 @@ function PullModal({ onClose }: { onClose: () => void }) {
     setProgress({});
     try {
       await pull.mutateAsync({ image, tag });
-    } catch (e: any) {
-      setError(e.toString());
+    } catch (e: unknown) {
+      setError(e instanceof Error ? e.message : String(e));
       setPulling(false);
     }
   };
