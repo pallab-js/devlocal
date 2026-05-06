@@ -63,6 +63,8 @@ export function ContainerDetailsModal({ containerId, onClose }: Props) {
               </div>
             )}
 
+            <LimitsEditor containerId={containerId} initialCpu={null} initialMem={stats?.mem_limit_mb} />
+
             {details.env.length > 0 && (
               <div className="mt-2">
                 <div className={labelClass}>Environment</div>
@@ -110,3 +112,58 @@ function StatBar({ label, value, pct, max }: { label: string; value: string; pct
 }
 
 const labelClass = "text-[10px] font-mono uppercase tracking-wider text-text-3";
+
+function LimitsEditor({ containerId, initialCpu, initialMem }: { containerId: string, initialCpu: number | null, initialMem?: number }) {
+  const [cpu, setCpu] = useState(initialCpu?.toString() ?? "");
+  const [mem, setMem] = useState(initialMem?.toString() ?? "");
+  const [loading, setLoading] = useState(false);
+
+  const handleUpdate = async () => {
+    setLoading(true);
+    try {
+      const cpuShares = cpu ? parseInt(cpu) : undefined;
+      const memoryBytes = mem ? parseInt(mem) * 1024 * 1024 : undefined;
+      await ipc.updateContainerLimits(containerId, cpuShares, memoryBytes);
+      alert("Limits updated successfully");
+    } catch (e) {
+      alert(`Error updating limits: ${e}`);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <div className="mt-2 border-t border-border pt-4">
+      <div className={labelClass}>Edit Resource Limits</div>
+      <div className="grid grid-cols-2 gap-3 mt-2">
+        <div className="flex flex-col gap-1">
+          <label className="text-[11px] text-text-2">CPU Shares</label>
+          <input
+            type="number"
+            value={cpu}
+            onChange={(e) => setCpu(e.target.value)}
+            placeholder="e.g. 1024"
+            className="bg-bg-deep border border-border rounded px-2 py-1 text-[12px] text-text font-mono focus:outline-none focus:border-blue transition-colors"
+          />
+        </div>
+        <div className="flex flex-col gap-1">
+          <label className="text-[11px] text-text-2">Memory (MB)</label>
+          <input
+            type="number"
+            value={mem}
+            onChange={(e) => setMem(e.target.value)}
+            placeholder="e.g. 512"
+            className="bg-bg-deep border border-border rounded px-2 py-1 text-[12px] text-text font-mono focus:outline-none focus:border-blue transition-colors"
+          />
+        </div>
+      </div>
+      <button
+        onClick={handleUpdate}
+        disabled={loading}
+        className="mt-3 w-full bg-blue/10 hover:bg-blue/20 border border-blue/30 text-blue text-[12px] font-medium py-1.5 rounded-lg transition-colors disabled:opacity-50"
+      >
+        {loading ? "Updating..." : "Apply Resource Limits"}
+      </button>
+    </div>
+  );
+}

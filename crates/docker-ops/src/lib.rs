@@ -1,9 +1,9 @@
 use bollard::container::{
     ListContainersOptions, RestartContainerOptions, StartContainerOptions, StatsOptions,
-    StopContainerOptions,
+    StopContainerOptions, UpdateContainerOptions,
 };
 use bollard::image::{CreateImageOptions, ListImagesOptions, RemoveImageOptions};
-use bollard::models::ContainerSummary;
+use bollard::models::{ContainerSummary, Resources};
 use bollard::Docker;
 use futures_util::StreamExt;
 use serde::{Deserialize, Serialize};
@@ -209,6 +209,25 @@ pub async fn restart_container(docker: &Docker, id: &str) -> Result<ContainerInf
         .restart_container(id, Some(RestartContainerOptions { t: 10 }))
         .await?;
     fetch_one(docker, id).await
+}
+
+pub async fn update_container_limits(
+    docker: &Docker,
+    id: &str,
+    cpu_shares: Option<i64>,
+    memory_bytes: Option<i64>,
+) -> Result<(), DockerError> {
+    let resources = Resources {
+        cpu_shares,
+        memory: memory_bytes,
+        ..Default::default()
+    };
+    let opts = UpdateContainerOptions {
+        resources,
+        ..Default::default()
+    };
+    docker.update_container(id, opts).await?;
+    Ok(())
 }
 
 pub async fn inspect_container(docker: &Docker, id: &str) -> Result<ContainerDetails, DockerError> {

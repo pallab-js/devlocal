@@ -55,6 +55,17 @@ pub async fn restart_container(
 }
 
 #[tauri::command]
+pub async fn update_container_limits(
+    id: String,
+    cpu_shares: Option<i64>,
+    memory_bytes: Option<i64>,
+    docker: State<'_, DockerState>,
+) -> Result<()> {
+    let docker = docker.0.as_ref().ok_or_else(|| crate::error::AppError::Generic("Docker not connected".to_string()))?;
+    Ok(docker_ops::update_container_limits(docker, &id, cpu_shares, memory_bytes).await?)
+}
+
+#[tauri::command]
 pub async fn inspect_container(
     id: String,
     docker: State<'_, DockerState>,

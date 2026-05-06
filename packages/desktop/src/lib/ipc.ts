@@ -100,6 +100,8 @@ export const ipc = {
   startContainer: (id: string) => invoke<ContainerInfo>("start_container", { id }),
   stopContainer: (id: string) => invoke<ContainerInfo>("stop_container", { id }),
   restartContainer: (id: string) => invoke<ContainerInfo>("restart_container", { id }),
+  updateContainerLimits: (id: string, cpuShares?: number, memoryBytes?: number) =>
+    invoke<void>("update_container_limits", { id, cpuShares: cpuShares ?? null, memoryBytes: memoryBytes ?? null }),
   inspectContainer: (id: string) => invoke<ContainerDetails>("inspect_container", { id }),
   getContainerStats: (id: string) => invoke<ContainerStats>("get_container_stats", { id }),
   streamLogs: (containerId: string, tail?: number) =>

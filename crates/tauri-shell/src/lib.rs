@@ -81,6 +81,7 @@ pub fn run(context: tauri::Context) {
             docker::start_container,
             docker::stop_container,
             docker::restart_container,
+            docker::update_container_limits,
             docker::inspect_container,
             docker::get_host_stats,
             docker::get_container_stats,
