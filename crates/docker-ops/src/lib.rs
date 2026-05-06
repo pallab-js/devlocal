@@ -8,13 +8,15 @@ use futures_util::StreamExt;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use sysinfo::{Disks, System};
+use ts_rs::TS;
 
 pub mod error;
 pub use error::DockerError;
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
-#[derive(Debug, Serialize, Deserialize, Clone)]
+#[derive(Debug, Serialize, Deserialize, Clone, TS)]
+#[ts(export, export_to = "../../packages/shared/types/")]
 pub struct ContainerInfo {
     pub id: String,
     pub name: String,
@@ -26,7 +28,8 @@ pub struct ContainerInfo {
     pub compose_project: Option<String>,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, TS)]
+#[ts(export, export_to = "../../packages/shared/types/")]
 pub struct ContainerDetails {
     pub id: String,
     pub name: String,
@@ -40,7 +43,8 @@ pub struct ContainerDetails {
     pub cmd: Vec<String>,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, TS)]
+#[ts(export, export_to = "../../packages/shared/types/")]
 pub struct HostStats {
     pub cpu_percent: f64,
     pub mem_used_mb: u64,
@@ -49,14 +53,16 @@ pub struct HostStats {
     pub disk_total_gb: f64,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, TS)]
+#[ts(export, export_to = "../../packages/shared/types/")]
 pub struct NetworkContainer {
     pub name: String,
     pub ipv4: String,
     pub mac: String,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, TS)]
+#[ts(export, export_to = "../../packages/shared/types/")]
 pub struct NetworkInfo {
     pub id: String,
     pub name: String,
@@ -67,7 +73,8 @@ pub struct NetworkInfo {
     pub containers: Vec<NetworkContainer>,
 }
 
-#[derive(Debug, Serialize, Deserialize, Clone)]
+#[derive(Debug, Serialize, Deserialize, Clone, TS)]
+#[ts(export, export_to = "../../packages/shared/types/")]
 pub struct DockerEvent {
     pub kind: String,
     pub action: String,
@@ -75,14 +82,16 @@ pub struct DockerEvent {
     pub time: i64,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, TS)]
+#[ts(export, export_to = "../../packages/shared/types/")]
 pub struct ContainerStats {
     pub cpu_percent: f64,
     pub mem_used_mb: u64,
     pub mem_limit_mb: u64,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, TS)]
+#[ts(export, export_to = "../../packages/shared/types/")]
 pub struct VolumeInfo {
     pub name: String,
     pub driver: String,

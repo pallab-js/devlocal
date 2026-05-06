@@ -1,0 +1,142 @@
+use crate::{pool, validate_scope, EnvVar, import_env_file_inner, KEYRING_SERVICE, is_sensitive};
+use sqlx::SqlitePool;
+
+#[tauri::command]
+pub async fn list_env_vars(scope: Option<String>) -> Result<Vec<EnvVar>, String> {
+    if let Some(ref s) = scope {
+        validate_scope(s)?;
+    }
+    let pool = pool()?;
+    match scope {
+        Some(s) => {
+            sqlx::query_as::<_, EnvVar>("SELECT * FROM env_vars WHERE scope = ? ORDER BY key")
+                .bind(s)
+                .fetch_all(pool)
+                .await
+        }
+        None => {
+            sqlx::query_as::<_, EnvVar>("SELECT * FROM env_vars ORDER BY scope, key")
+                .fetch_all(pool)
+                .await
+        }
+    }
+    .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn upsert_env_var(key: String, value: String, scope: String) -> Result<EnvVar, String> {
+    validate_scope(&scope)?;
+    let pool = pool()?;
+
+    // Security 2.3: store sensitive values in OS keychain
+    let stored_value = if is_sensitive(&key) {
+        let keyring_key = format!("{scope}:{key}");
+        let entry =
+            keyring::Entry::new(KEYRING_SERVICE, &keyring_key).map_err(|e| e.to_string())?;
+        entry.set_password(&value).map_err(|e| e.to_string())?;
+        "__keychain__".to_string() // sentinel value in DB
+    } else {
+        value
+    };
+
+    sqlx::query(
+        "INSERT INTO env_vars (key, value, scope) VALUES (?, ?, ?)
+         ON CONFLICT(key, scope) DO UPDATE SET value = excluded.value",
+    )
+    .bind(&key)
+    .bind(&stored_value)
+    .bind(&scope)
+    .execute(pool)
+    .await
+    .map_err(|e| e.to_string())?;
+
+    sqlx::query_as::<_, EnvVar>("SELECT * FROM env_vars WHERE key = ? AND scope = ?")
+        .bind(&key)
+        .bind(&scope)
+        .fetch_one(pool)
+        .await
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn delete_env_var(id: i64) -> Result<(), String> {
+    let pool = pool()?;
+    sqlx::query("DELETE FROM env_vars WHERE id = ?")
+        .bind(id)
+        .execute(pool)
+        .await
+        .map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn import_env_file(content: String, scope: String) -> Result<u32, String> {
+    validate_scope(&scope)?;
+    let pool = pool()?;
+    import_env_file_inner(pool, &content, &scope).await
+}
+
+/// Bug 1.4: quote values containing spaces, =, #, or newlines.
+#[tauri::command]
+pub async fn export_env_scope(scope: String) -> Result<String, String> {
+    validate_scope(&scope)?;
+    let pool = pool()?;
+    let rows = sqlx::query_as::<_, EnvVar>("SELECT * FROM env_vars WHERE scope = ? ORDER BY key")
+        .bind(&scope)
+        .fetch_all(pool)
+        .await
+        .map_err(|e| e.to_string())?;
+    let content = rows
+        .iter()
+        .map(|v| {
+            let val = &v.value;
+            let needs_quotes =
+                val.contains(' ') || val.contains('=') || val.contains('#') || val.contains('\n');
+            if needs_quotes {
+                format!("{}=\"{}\"", v.key, val.replace('"', "\\\""))
+            } else {
+                format!("{}={}", v.key, val)
+            }
+        })
+        .collect::<Vec<_>>()
+        .join("\n");
+    Ok(content)
+}
+
+/// Architecture 4.2: moved from settings/mod.rs
+#[tauri::command]
+pub async fn clear_all_env_vars() -> Result<u64, String> {
+    let pool = pool()?;
+    let result = sqlx::query("DELETE FROM env_vars")
+        .execute(pool)
+        .await
+        .map_err(|e| e.to_string())?;
+    Ok(result.rows_affected())
+}
+
+/// Architecture 4.4: settings table commands
+#[tauri::command]
+pub async fn get_setting(key: String) -> Result<Option<String>, String> {
+    let pool = pool()?;
+    let row: Option<(String,)> = sqlx::query_as("SELECT value FROM settings WHERE key = ?")
+        .bind(&key)
+        .fetch_optional(pool)
+        .await
+        .map_err(|e| e.to_string())?;
+    Ok(row.map(|(v,)| v))
+}
+
+#[tauri::command]
+pub async fn set_setting(key: String, value: String) -> Result<(), String> {
+    let pool = pool()?;
+    sqlx::query(
+        "INSERT INTO settings (key, value) VALUES (?, ?)
+         ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+    )
+    .bind(&key)
+    .bind(&value)
+    .execute(pool)
+    .await
+    .map_err(|e| e.to_string())?;
+    Ok(())
+}

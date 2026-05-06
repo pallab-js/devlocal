@@ -12,3 +12,4 @@ futures-util = "0.3"
 chrono = { version = "0.4", features = ["serde"] }
 sysinfo = "0.33"
 thiserror = "2"
+ts-rs = { version = "10", features = ["serde-compat"] }
