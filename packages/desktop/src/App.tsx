@@ -1,5 +1,6 @@
-import { useEffect } from "react";
+import { useState, useEffect } from "react";
 import { Routes, Route, useNavigate } from "react-router-dom";
+import { listen } from "@tauri-apps/api/event";
 import { AppShell } from "./components/layout/AppShell";
 import { ErrorBoundary } from "./components/ErrorBoundary";
 import { ToastProvider } from "./components/Toast";
@@ -10,8 +11,18 @@ import { Network } from "./pages/Network";
 import { Volumes } from "./pages/Volumes";
 import { Settings } from "./pages/Settings";
 
-import { useState, useEffect } from "react";
-import { Routes, Route, useNavigate } from "react-router-dom";
+function DockerStatusBanner({ online }: { online: boolean }) {
+  if (online) return null;
+
+  return (
+    <div className="bg-orange-500/10 border-b border-orange-500/20 py-2 px-4 flex items-center justify-center gap-2 animate-in slide-in-from-top duration-300">
+      <span className="flex h-2 w-2 rounded-full bg-orange-500 animate-pulse" />
+      <span className="text-xs font-medium text-orange-500">
+        Docker is offline. Some features may be unavailable.
+      </span>
+    </div>
+  );
+}
 // ... (imports remain the same)
 function KeyboardShortcuts() {
   const navigate = useNavigate();
@@ -104,8 +115,21 @@ function ShortcutItem({ keys, label }: { keys: string[]; label: string }) {
 }
 
 export default function App() {
+  const [dockerOnline, setDockerOnline] = useState(true);
+
+  useEffect(() => {
+    const unlisten = listen<{ online: boolean }>("app:dockerd-status", (event) => {
+      setDockerOnline(event.payload.online);
+    });
+
+    return () => {
+      unlisten.then((f) => f());
+    };
+  }, []);
+
   return (
     <ToastProvider>
+      <DockerStatusBanner online={dockerOnline} />
       <KeyboardShortcuts />
       <Routes>
         <Route element={<AppShell />}>
