@@ -1,0 +1,8 @@
+[workspace]
+members = [
+    "packages/desktop/src-tauri",
+    "crates/docker-ops",
+    "crates/db",
+    "crates/tauri-shell",
+]
+resolver = "2"
