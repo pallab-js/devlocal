@@ -1,0 +1,89 @@
+@import url("https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700&family=Space+Grotesk:wght@400;500&display=swap");
+@import "tailwindcss";
+
+@theme {
+  --color-bg: var(--bg);
+  --color-bg-deep: var(--bg-deep);
+  --color-surface: var(--surface);
+  --color-surface-hi: var(--surface-hi);
+  --color-surface-2: var(--surface-2);
+  --color-surface-3: var(--surface-3);
+  --color-border: var(--border);
+  --color-border-hi: var(--border-hi);
+  --color-border-light: var(--border-light);
+  --color-green: var(--green);
+  --color-text: var(--text);
+  --color-text-2: var(--text-2);
+  --color-text-3: var(--text-3);
+  --color-orange: var(--orange);
+  --color-violet: var(--violet);
+  --color-error: var(--error);
+
+  --font-sans: "Plus Jakarta Sans", sans-serif;
+  --font-mono: "Space Grotesk", monospace;
+}
+
+/* Light Theme (Default) */
+:root {
+  --bg: #ffffff;
+  --bg-deep: #f3f4f6;
+  --surface: #ffffff;
+  --surface-hi: #f9fafb;
+  --surface-2: #f3f4f6;
+  --surface-3: #e5e7eb;
+  --border: #e5e7eb;
+  --border-hi: #d1d5db;
+  --border-light: #f3f4f6;
+  --green: #10b981;
+  --text: #111827;
+  --text-2: #4b5563;
+  --text-3: #9ca3af;
+  --orange: #f97316;
+  --violet: #8b5cf6;
+  --error: #ef4444;
+}
+
+/* Dark Theme */
+.dark {
+  --bg: #171717;
+  --bg-deep: #0f0f0f;
+  --surface: #131313;
+  --surface-hi: #1c1c1c;
+  --surface-2: #202020;
+  --surface-3: #2a2a2a;
+  --border: #2e2e2e;
+  --border-hi: #363636;
+  --border-light: #242424;
+  --green: #3ecf8e;
+  --text: #fafafa;
+  --text-2: #b4b4b4;
+  --text-3: #898989;
+  --orange: #ffa072;
+  --violet: hsl(251, 63.2%, 63.2%);
+  --error: #ffb4ab;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--font-sans);
+  font-size: 14px;
+  line-height: 1.6;
+  margin: 0;
+}
+
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: var(--bg-deep);
+}
+::-webkit-scrollbar-thumb {
+  background: var(--border-hi);
+  border-radius: 3px;
+}
