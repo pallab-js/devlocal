@@ -46,6 +46,12 @@ pub fn run(context: tauri::Context) {
                 }
             });
 
+            // Start Docker health monitor
+            let docker_state = app.state::<DockerState>();
+            if let Some(docker) = &docker_state.0 {
+                crate::docker::start_health_monitor(app.handle().clone(), Arc::clone(docker));
+            }
+
             // System tray
             use tauri::menu::{Menu, MenuItem, PredefinedMenuItem};
             use tauri::tray::TrayIconBuilder;

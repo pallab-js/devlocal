@@ -208,3 +208,13 @@ pub async fn prune_volumes(docker: State<'_, DockerState>) -> Result<u64> {
     let docker = docker.0.as_ref().ok_or_else(|| crate::error::AppError::Generic("Docker not connected".to_string()))?;
     Ok(docker_ops::prune_volumes(docker).await?)
 }
+
+pub fn start_health_monitor(app: AppHandle, docker: Arc<Docker>) {
+    tokio::spawn(async move {
+        loop {
+            let online = docker.ping().await.is_ok();
+            let _ = app.emit("app:dockerd-status", serde_json::json!({ "online": online }));
+            tokio::time::sleep(std::time::Duration::from_secs(5)).await;
+        }
+    });
+}
