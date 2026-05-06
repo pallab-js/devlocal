@@ -26,11 +26,13 @@ fn connect_docker() -> Result<bollard::Docker, bollard::errors::Error> {
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
-pub fn run() {
+pub fn run(context: tauri::Context) {
     let docker = connect_docker().ok();
 
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
+        .plugin(tauri_plugin_dialog::init())
+        .plugin(tauri_plugin_fs::init())
         .plugin(tauri_plugin_updater::Builder::new().build())
         .manage(DockerState(docker.map(Arc::new)))
         .manage(LogStreamState(Mutex::new(None)))
@@ -95,7 +97,7 @@ pub fn run() {
             settings::get_app_info,
             settings::test_docker_connection,
         ])
-        .run(tauri::generate_context!())
+        .run(context)
         .expect("error while running tauri application");
 }
 
