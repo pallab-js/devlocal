@@ -59,6 +59,8 @@ jobs:
   build:
     name: Build (${{ matrix.platform }})
     needs: lint-test
+    permissions:
+      contents: write
     strategy:
       fail-fast: false
       matrix:
