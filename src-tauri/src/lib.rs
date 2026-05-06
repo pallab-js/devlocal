@@ -9,8 +9,8 @@ use db::{
 use docker::{
     get_container_stats, get_host_stats, get_network_topology, inspect_container, inspect_network,
     list_containers, list_volumes, prune_volumes, restart_container, start_container,
-    stop_container, stop_docker_events, stop_logs, stream_docker_events, stream_logs,
-    DockerState, EventStreamState, LogStreamState, SysState,
+    stop_container, stop_docker_events, stop_logs, stream_docker_events, stream_logs, DockerState,
+    EventStreamState, LogStreamState, SysState,
 };
 use settings::{get_app_info, test_docker_connection};
 use std::sync::{Arc, Mutex};
@@ -24,7 +24,9 @@ fn connect_docker() -> Result<bollard::Docker, bollard::errors::Error> {
             let home_path = std::path::PathBuf::from(home);
             let docker_sock = home_path.join(".docker/run/docker.sock");
             let socket_uri = format!("unix://{}", docker_sock.display());
-            if let Ok(docker) = bollard::Docker::connect_with_socket(&socket_uri, 120, bollard::API_DEFAULT_VERSION) {
+            if let Ok(docker) =
+                bollard::Docker::connect_with_socket(&socket_uri, 120, bollard::API_DEFAULT_VERSION)
+            {
                 return Ok(docker);
             }
         }
@@ -52,8 +54,8 @@ pub fn run() {
             });
 
             // System tray
-            use tauri::tray::TrayIconBuilder;
             use tauri::menu::{Menu, MenuItem, PredefinedMenuItem};
+            use tauri::tray::TrayIconBuilder;
             let quit = MenuItem::with_id(app, "quit", "Quit", true, None::<&str>)?;
             let open = MenuItem::with_id(app, "open", "Open DevOpsLocal", true, None::<&str>)?;
             let sep = PredefinedMenuItem::separator(app)?;

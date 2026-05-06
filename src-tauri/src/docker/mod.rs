@@ -1,6 +1,6 @@
 use bollard::container::{
     ListContainersOptions, LogsOptions, RestartContainerOptions, StartContainerOptions,
-    StopContainerOptions, StatsOptions,
+    StatsOptions, StopContainerOptions,
 };
 use bollard::models::ContainerSummary;
 use bollard::system::EventsOptions;
@@ -176,7 +176,10 @@ pub async fn list_containers(docker: State<'_, DockerState>) -> Result<Vec<Conta
 }
 
 #[tauri::command]
-pub async fn start_container(id: String, docker: State<'_, DockerState>) -> Result<ContainerInfo, String> {
+pub async fn start_container(
+    id: String,
+    docker: State<'_, DockerState>,
+) -> Result<ContainerInfo, String> {
     let docker = docker.0.as_ref().ok_or("Docker not connected")?;
     docker
         .start_container(&id, None::<StartContainerOptions<String>>)
@@ -186,7 +189,10 @@ pub async fn start_container(id: String, docker: State<'_, DockerState>) -> Resu
 }
 
 #[tauri::command]
-pub async fn stop_container(id: String, docker: State<'_, DockerState>) -> Result<ContainerInfo, String> {
+pub async fn stop_container(
+    id: String,
+    docker: State<'_, DockerState>,
+) -> Result<ContainerInfo, String> {
     let docker = docker.0.as_ref().ok_or("Docker not connected")?;
     docker
         .stop_container(&id, Some(StopContainerOptions { t: 10 }))
@@ -196,7 +202,10 @@ pub async fn stop_container(id: String, docker: State<'_, DockerState>) -> Resul
 }
 
 #[tauri::command]
-pub async fn restart_container(id: String, docker: State<'_, DockerState>) -> Result<ContainerInfo, String> {
+pub async fn restart_container(
+    id: String,
+    docker: State<'_, DockerState>,
+) -> Result<ContainerInfo, String> {
     let docker = docker.0.as_ref().ok_or("Docker not connected")?;
     docker
         .restart_container(&id, Some(RestartContainerOptions { t: 10 }))
@@ -206,7 +215,10 @@ pub async fn restart_container(id: String, docker: State<'_, DockerState>) -> Re
 }
 
 #[tauri::command]
-pub async fn inspect_container(id: String, docker: State<'_, DockerState>) -> Result<ContainerDetails, String> {
+pub async fn inspect_container(
+    id: String,
+    docker: State<'_, DockerState>,
+) -> Result<ContainerDetails, String> {
     let docker = docker.0.as_ref().ok_or("Docker not connected")?;
     let info = docker
         .inspect_container(&id, None)
@@ -307,7 +319,9 @@ pub async fn get_host_stats(sys_state: State<'_, SysState>) -> Result<HostStats,
 }
 
 #[tauri::command]
-pub async fn get_network_topology(docker: State<'_, DockerState>) -> Result<Vec<NetworkInfo>, String> {
+pub async fn get_network_topology(
+    docker: State<'_, DockerState>,
+) -> Result<Vec<NetworkInfo>, String> {
     let docker = docker.0.as_ref().ok_or("Docker not connected")?;
     let networks = docker
         .list_networks::<String>(None)
@@ -347,7 +361,10 @@ pub async fn get_network_topology(docker: State<'_, DockerState>) -> Result<Vec<
 }
 
 #[tauri::command]
-pub async fn inspect_network(id: String, docker: State<'_, DockerState>) -> Result<NetworkInfo, String> {
+pub async fn inspect_network(
+    id: String,
+    docker: State<'_, DockerState>,
+) -> Result<NetworkInfo, String> {
     let docker = docker.0.as_ref().ok_or("Docker not connected")?;
     let net = docker
         .inspect_network::<String>(&id, None)
@@ -481,10 +498,19 @@ pub async fn stop_docker_events(event_state: State<'_, EventStreamState>) -> Res
 
 /// Get per-container CPU and memory stats (Feature 7.1).
 #[tauri::command]
-pub async fn get_container_stats(id: String, docker: State<'_, DockerState>) -> Result<ContainerStats, String> {
+pub async fn get_container_stats(
+    id: String,
+    docker: State<'_, DockerState>,
+) -> Result<ContainerStats, String> {
     let docker = docker.0.as_ref().ok_or("Docker not connected")?;
     let stats = docker
-        .stats(&id, Some(StatsOptions { stream: false, one_shot: true }))
+        .stats(
+            &id,
+            Some(StatsOptions {
+                stream: false,
+                one_shot: true,
+            }),
+        )
         .next()
         .await
         .ok_or_else(|| format!("No stats for container {id}"))?
@@ -520,7 +546,11 @@ pub async fn get_container_stats(id: String, docker: State<'_, DockerState>) -> 
     let mem_used_mb = mem_usage.saturating_sub(mem_cache) / 1024 / 1024;
     let mem_limit_mb = stats.memory_stats.limit.unwrap_or(0) / 1024 / 1024;
 
-    Ok(ContainerStats { cpu_percent, mem_used_mb, mem_limit_mb })
+    Ok(ContainerStats {
+        cpu_percent,
+        mem_used_mb,
+        mem_limit_mb,
+    })
 }
 
 /// List Docker volumes (Feature 7.3).

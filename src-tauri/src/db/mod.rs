@@ -9,9 +9,18 @@ const KEYRING_SERVICE: &str = "devopslocal";
 /// Regex-like check: keys matching these patterns are stored in the OS keychain.
 fn is_sensitive(key: &str) -> bool {
     let lower = key.to_lowercase();
-    ["secret", "password", "token", "key", "pwd", "pass", "auth", "credential"]
-        .iter()
-        .any(|pat| lower.contains(pat))
+    [
+        "secret",
+        "password",
+        "token",
+        "key",
+        "pwd",
+        "pass",
+        "auth",
+        "credential",
+    ]
+    .iter()
+    .any(|pat| lower.contains(pat))
 }
 
 pub async fn init(app: &tauri::AppHandle) -> Result<(), String> {
@@ -94,8 +103,8 @@ pub async fn upsert_env_var(key: String, value: String, scope: String) -> Result
     // Security 2.3: store sensitive values in OS keychain
     let stored_value = if is_sensitive(&key) {
         let keyring_key = format!("{scope}:{key}");
-        let entry = keyring::Entry::new(KEYRING_SERVICE, &keyring_key)
-            .map_err(|e| e.to_string())?;
+        let entry =
+            keyring::Entry::new(KEYRING_SERVICE, &keyring_key).map_err(|e| e.to_string())?;
         entry.set_password(&value).map_err(|e| e.to_string())?;
         "__keychain__".to_string() // sentinel value in DB
     } else {
@@ -189,10 +198,8 @@ pub async fn export_env_scope(scope: String) -> Result<String, String> {
         .iter()
         .map(|v| {
             let val = &v.value;
-            let needs_quotes = val.contains(' ')
-                || val.contains('=')
-                || val.contains('#')
-                || val.contains('\n');
+            let needs_quotes =
+                val.contains(' ') || val.contains('=') || val.contains('#') || val.contains('\n');
             if needs_quotes {
                 format!("{}=\"{}\"", v.key, val.replace('"', "\\\""))
             } else {
@@ -219,12 +226,11 @@ pub async fn clear_all_env_vars() -> Result<u64, String> {
 #[tauri::command]
 pub async fn get_setting(key: String) -> Result<Option<String>, String> {
     let pool = pool()?;
-    let row: Option<(String,)> =
-        sqlx::query_as("SELECT value FROM settings WHERE key = ?")
-            .bind(&key)
-            .fetch_optional(pool)
-            .await
-            .map_err(|e| e.to_string())?;
+    let row: Option<(String,)> = sqlx::query_as("SELECT value FROM settings WHERE key = ?")
+        .bind(&key)
+        .fetch_optional(pool)
+        .await
+        .map_err(|e| e.to_string())?;
     Ok(row.map(|(v,)| v))
 }
 
@@ -363,7 +369,9 @@ mod tests {
     async fn test_import_env_file() {
         let pool = test_pool().await;
         let content = "FOO=bar\nBAZ=hello world\n# comment\nEMPTY=\n";
-        let count = import_env_file_inner(&pool, content, "global").await.unwrap();
+        let count = import_env_file_inner(&pool, content, "global")
+            .await
+            .unwrap();
         assert_eq!(count, 3); // FOO, BAZ, EMPTY
         let rows: Vec<(String, String)> =
             sqlx::query_as("SELECT key, value FROM env_vars ORDER BY key")
@@ -416,17 +424,21 @@ mod tests {
     async fn test_import_is_atomic_on_error() {
         let pool = test_pool().await;
         // Insert a row that will cause a unique constraint violation mid-import
-        sqlx::query("INSERT INTO env_vars (key, value, scope) VALUES ('EXISTING', 'old', 'global')")
-            .execute(&pool)
-            .await
-            .unwrap();
+        sqlx::query(
+            "INSERT INTO env_vars (key, value, scope) VALUES ('EXISTING', 'old', 'global')",
+        )
+        .execute(&pool)
+        .await
+        .unwrap();
         // The import_env_file_inner uses ON CONFLICT DO UPDATE, so it won't fail on duplicates.
         // Test atomicity by verifying all-or-nothing: use a bad scope to trigger error.
         // Since validate_scope is called before inner, we test the transaction directly.
         // Simulate a mid-import failure by using a pool with a closed connection.
         // Instead, verify that a successful import commits all rows atomically.
         let content = "A=1\nB=2\nC=3\n";
-        let count = import_env_file_inner(&pool, content, "global").await.unwrap();
+        let count = import_env_file_inner(&pool, content, "global")
+            .await
+            .unwrap();
         assert_eq!(count, 3);
         let total: (i64,) = sqlx::query_as("SELECT COUNT(*) FROM env_vars")
             .fetch_one(&pool)
