@@ -74,6 +74,23 @@ export interface VolumeInfo {
   created: string;
 }
 
+export interface ImageInfo {
+  id: string;
+  repo_tags: string[];
+  created: number;
+  size: number;
+  virtual_size: number;
+  containers: number;
+}
+
+export interface PullProgress {
+  id?: string;
+  status?: string;
+  progress?: string;
+  current?: number;
+  total?: number;
+}
+
 export const ipc = {
   getAppInfo: () => invoke<AppInfo>("get_app_info"),
   testDockerConnection: (socketPath?: string) =>
@@ -101,6 +118,10 @@ export const ipc = {
   inspectNetwork: (id: string) => invoke<NetworkInfo>("inspect_network", { id }),
   listVolumes: () => invoke<VolumeInfo[]>("list_volumes"),
   pruneVolumes: () => invoke<number>("prune_volumes"),
+  listImages: () => invoke<ImageInfo[]>("list_images"),
+  pullImage: (image: string, tag: string) => invoke<void>("pull_image", { image, tag }),
+  deleteImage: (id: string, force?: boolean) => invoke<void>("delete_image", { id, force: force ?? false }),
+  pruneImages: () => invoke<number>("prune_images"),
   getSetting: (key: string) => invoke<string | null>("get_setting", { key }),
   setSetting: (key: string, value: string) => invoke<void>("set_setting", { key, value }),
 };

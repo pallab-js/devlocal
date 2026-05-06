@@ -57,3 +57,27 @@ export function useNetworkTopology() {
     queryFn: () => ipc.getNetworkTopology(),
   });
 }
+
+export function useImages() {
+  return useQuery({
+    queryKey: ["images"],
+    queryFn: () => ipc.listImages(),
+  });
+}
+
+export function useImageMutations() {
+  const qc = useQueryClient();
+  const invalidate = () => qc.invalidateQueries({ queryKey: ["images"] });
+
+  const pull = useMutation({
+    mutationFn: ({ image, tag }: { image: string; tag: string }) => ipc.pullImage(image, tag),
+    onSuccess: invalidate,
+  });
+  const remove = useMutation({
+    mutationFn: ({ id, force }: { id: string; force?: boolean }) => ipc.deleteImage(id, force),
+    onSuccess: invalidate,
+  });
+  const prune = useMutation({ mutationFn: ipc.pruneImages, onSuccess: invalidate });
+
+  return { pull, remove, prune };
+}

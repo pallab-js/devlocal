@@ -6,6 +6,7 @@ import { ErrorBoundary } from "./components/ErrorBoundary";
 import { ToastProvider } from "./components/Toast";
 import { Dashboard } from "./pages/Dashboard";
 import { Environments } from "./pages/Environments";
+import Images from "./pages/Images";
 import { Logs } from "./pages/Logs";
 import { Network } from "./pages/Network";
 import { Volumes } from "./pages/Volumes";
@@ -135,6 +136,7 @@ export default function App() {
         <Route element={<AppShell />}>
           <Route index element={<ErrorBoundary><Dashboard /></ErrorBoundary>} />
           <Route path="environments" element={<ErrorBoundary><Environments /></ErrorBoundary>} />
+          <Route path="images" element={<ErrorBoundary><Images /></ErrorBoundary>} />
           <Route path="logs" element={<ErrorBoundary><Logs /></ErrorBoundary>} />
           <Route path="network" element={<ErrorBoundary><Network /></ErrorBoundary>} />
           <Route path="volumes" element={<ErrorBoundary><Volumes /></ErrorBoundary>} />
