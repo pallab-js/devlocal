@@ -35,13 +35,3 @@ pub async fn test_docker_connection(socket_path: Option<String>) -> Result<Strin
         info.api_version.unwrap_or_default()
     ))
 }
-
-#[tauri::command]
-pub async fn clear_all_env_vars() -> Result<u64, String> {
-    let pool = crate::db::get_pool()?;
-    let result = sqlx::query("DELETE FROM env_vars")
-        .execute(pool)
-        .await
-        .map_err(|e| e.to_string())?;
-    Ok(result.rows_affected())
-}

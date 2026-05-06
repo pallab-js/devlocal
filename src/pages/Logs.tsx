@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from "react";
+import { useVirtualizer } from "@tanstack/react-virtual";
 import { listen } from "@tauri-apps/api/event";
 import { useContainers } from "../hooks/useQueries";
 import { ipc } from "../lib/ipc";
@@ -229,14 +230,7 @@ export function Logs() {
         {selectedId && visible.length === 0 && lines.length > 0 && (
           <p style={{ color: "var(--text-3)" }}>No lines match the current filter.</p>
         )}
-        {visible.map((line) => (
-          <div key={line.id} style={{ display: "flex", gap: 10, color: LEVEL_COLOR[line.level], whiteSpace: "pre-wrap", wordBreak: "break-all" }}>
-            {line.ts && (
-              <span style={{ color: "var(--text-3)", flexShrink: 0, userSelect: "none" }}>{formatTs(line.ts)}</span>
-            )}
-            <span>{line.text}</span>
-          </div>
-        ))}
+        <VirtualLogList visible={visible} />
         <div ref={bottomRef} />
       </div>
 
@@ -251,4 +245,46 @@ function iconBtn(color: string, bg: string): React.CSSProperties {
     border: `1px solid ${color === "var(--text-3)" ? "var(--border)" : color}`,
     background: bg, color, cursor: "pointer", fontFamily: "var(--font-mono)",
   };
+}
+
+function VirtualLogList({ visible }: { visible: LogLine[] }) {
+  const parentRef = useRef<HTMLDivElement>(null);
+  const rowVirtualizer = useVirtualizer({
+    count: visible.length,
+    getScrollElement: () => parentRef.current,
+    estimateSize: () => 22,
+    overscan: 20,
+  });
+
+  if (visible.length === 0) return null;
+
+  return (
+    <div ref={parentRef} style={{ height: "100%", overflow: "auto" }}>
+      <div style={{ height: rowVirtualizer.getTotalSize(), position: "relative" }}>
+        {rowVirtualizer.getVirtualItems().map((vRow) => {
+          const line = visible[vRow.index];
+          return (
+            <div
+              key={line.id}
+              style={{
+                position: "absolute",
+                top: vRow.start,
+                width: "100%",
+                display: "flex",
+                gap: 10,
+                color: LEVEL_COLOR[line.level],
+                whiteSpace: "pre-wrap",
+                wordBreak: "break-all",
+              }}
+            >
+              {line.ts && (
+                <span style={{ color: "var(--text-3)", flexShrink: 0, userSelect: "none" }}>{formatTs(line.ts)}</span>
+              )}
+              <span>{line.text}</span>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
 }

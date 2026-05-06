@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { ipc, type ContainerDetails } from "../lib/ipc";
+import { ipc, type ContainerDetails, type ContainerStats } from "../lib/ipc";
 
 interface Props {
   containerId: string;
@@ -8,12 +8,16 @@ interface Props {
 
 export function ContainerDetailsModal({ containerId, onClose }: Props) {
   const [details, setDetails] = useState<ContainerDetails | null>(null);
+  const [stats, setStats] = useState<ContainerStats | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     ipc.inspectContainer(containerId)
       .then(setDetails)
       .catch((e) => setError(String(e)));
+    ipc.getContainerStats(containerId)
+      .then(setStats)
+      .catch(() => {}); // stats may fail for stopped containers
   }, [containerId]);
 
   return (
@@ -42,6 +46,23 @@ export function ContainerDetailsModal({ containerId, onClose }: Props) {
             <Row label="Ports" value={details.ports.join(", ") || "—"} />
             <Row label="Mounts" value={details.mounts.join(", ") || "—"} />
             <Row label="Command" value={details.cmd.join(" ") || "—"} />
+
+            {/* Feature 7.1: per-container stats */}
+            {stats && (
+              <div>
+                <div style={labelStyle}>Resource Usage</div>
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, marginTop: 6 }}>
+                  <StatBar label="CPU" value={`${stats.cpu_percent.toFixed(1)}%`} pct={stats.cpu_percent} max={100} />
+                  <StatBar
+                    label="Memory"
+                    value={`${stats.mem_used_mb} / ${stats.mem_limit_mb} MB`}
+                    pct={stats.mem_used_mb}
+                    max={stats.mem_limit_mb || 1}
+                  />
+                </div>
+              </div>
+            )}
+
             {details.env.length > 0 && (
               <div>
                 <div style={labelStyle}>Environment</div>
@@ -66,6 +87,21 @@ function Row({ label, value }: { label: string; value: string }) {
     <div style={{ display: "grid", gridTemplateColumns: "100px 1fr", gap: 8, alignItems: "start" }}>
       <span style={labelStyle}>{label}</span>
       <span style={{ fontSize: 12, color: "var(--text-2)", fontFamily: "var(--font-mono)", wordBreak: "break-all" }}>{value}</span>
+    </div>
+  );
+}
+
+function StatBar({ label, value, pct, max }: { label: string; value: string; pct: number; max: number }) {
+  const percent = Math.min((pct / max) * 100, 100);
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+      <div style={{ display: "flex", justifyContent: "space-between" }}>
+        <span style={{ ...labelStyle, textTransform: "none" }}>{label}</span>
+        <span style={{ fontSize: 11, color: "var(--text-2)", fontFamily: "var(--font-mono)" }}>{value}</span>
+      </div>
+      <div style={{ background: "var(--surface-3)", borderRadius: 4, height: 5, overflow: "hidden" }}>
+        <div style={{ width: `${percent}%`, height: "100%", background: percent > 80 ? "var(--orange)" : "var(--green)", transition: "width 0.3s" }} />
+      </div>
     </div>
   );
 }

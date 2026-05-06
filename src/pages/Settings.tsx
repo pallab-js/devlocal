@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
+import { check } from "@tauri-apps/plugin-updater";
 import { ipc, type AppInfo } from "../lib/ipc";
 
 const card: React.CSSProperties = {
@@ -83,6 +84,10 @@ export function Settings() {
   const [clearing, setClearing] = useState(false);
   const [confirmClear, setConfirmClear] = useState(false);
 
+  // Updater
+  const [checkingUpdate, setCheckingUpdate] = useState(false);
+  const [updateStatus, setUpdateStatus] = useState<string | null>(null);
+
   useEffect(() => {
     ipc.getAppInfo().then(setInfo).catch(() => {});
   }, []);
@@ -103,13 +108,30 @@ export function Settings() {
   function saveIntervals() {
     localStorage.setItem("poll_containers", String(containerInterval));
     localStorage.setItem("poll_stats", String(statsInterval));
-    // Invalidate queries so new intervals take effect on next refetch
-    qc.invalidateQueries({ queryKey: ["containers"] });
-    qc.invalidateQueries({ queryKey: ["host-stats"] });
+    // Remove queries so they are recreated with the new interval on next render
+    qc.removeQueries({ queryKey: ["containers"] });
+    qc.removeQueries({ queryKey: ["host-stats"] });
   }
 
-  async function handleClearEnvVars() {
-    setClearing(true);
+  async function handleCheckUpdate() {
+    setCheckingUpdate(true);
+    setUpdateStatus(null);
+    try {
+      const update = await check();
+      if (update?.available) {
+        setUpdateStatus(`Update available: v${update.version}`);
+        await update.downloadAndInstall();
+      } else {
+        setUpdateStatus("You are on the latest version.");
+      }
+    } catch {
+      setUpdateStatus("Could not check for updates.");
+    } finally {
+      setCheckingUpdate(false);
+    }
+  }
+
+  async function handleClearEnvVars() {    setClearing(true);
     try {
       await ipc.clearAllEnvVars();
       qc.invalidateQueries({ queryKey: ["env-vars"] });
@@ -234,13 +256,22 @@ export function Settings() {
           {[
             { label: "Version", value: info?.version ?? "…" },
             { label: "License", value: "MIT" },
-            { label: "Source", value: "github.com/your-org/devopslocal" },
+            { label: "Source", value: "github.com/pallab-js/devlocal" },
           ].map(({ label: l, value }, i, arr) => (
             <div key={l} style={{ ...row, borderBottom: i < arr.length - 1 ? "1px solid var(--border-light)" : "none" }}>
               <span style={label}>{l}</span>
               <span style={{ fontSize: 12, color: "var(--text-3)", fontFamily: "var(--font-mono)" }}>{value}</span>
             </div>
           ))}
+          <div style={{ ...row, borderBottom: "none", marginTop: 8 }}>
+            <div>
+              <div style={label}>Updates</div>
+              {updateStatus && <div style={{ ...sublabel, color: updateStatus.startsWith("Update") ? "var(--green)" : "var(--text-3)" }}>{updateStatus}</div>}
+            </div>
+            <Btn onClick={handleCheckUpdate} disabled={checkingUpdate}>
+              {checkingUpdate ? "Checking…" : "Check for updates"}
+            </Btn>
+          </div>
         </div>
       </section>
 

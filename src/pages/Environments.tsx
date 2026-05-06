@@ -1,5 +1,6 @@
 import { useState, useRef } from "react";
 import { useEnvVars, useEnvVarMutations } from "../hooks/useQueries";
+import { useToast } from "../components/Toast";
 import { ipc } from "../lib/ipc";
 import { Skeleton } from "../components/Skeleton";
 import type { EnvVar } from "../lib/ipc";
@@ -17,6 +18,7 @@ export function Environments() {
   const [masked, setMasked] = useState<Set<number>>(new Set());
   const [formError, setFormError] = useState("");
   const fileRef = useRef<HTMLInputElement>(null);
+  const { toast } = useToast();
 
   const { data: vars, isLoading } = useEnvVars(scope);
   const { upsert, remove } = useEnvVarMutations();
@@ -60,19 +62,58 @@ export function Environments() {
     const file = e.target.files?.[0];
     if (!file) return;
     const content = await file.text();
-    const count = await ipc.importEnvFile(content, scope);
-    alert(`Imported ${count} variable(s) into "${scope}".`);
+    try {
+      const count = await ipc.importEnvFile(content, scope);
+      toast(`Imported ${count} variable(s) into "${scope}".`, "success");
+    } catch (err) {
+      toast(String(err), "error");
+    }
     // reset file input
     if (fileRef.current) fileRef.current.value = "";
   }
 
+  async function handleImportContent(content: string) {
+    try {
+      const count = await ipc.importEnvFile(content, scope);
+      toast(`Imported ${count} variable(s) into "${scope}".`, "success");
+    } catch (err) {
+      toast(String(err), "error");
+    }
+  }
+
   async function handleExport() {
-    const content = await ipc.exportEnvScope(scope);
-    const blob = new Blob([content], { type: "text/plain" });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url; a.download = `${scope}.env`; a.click();
-    URL.revokeObjectURL(url);
+    try {
+      const content = await ipc.exportEnvScope(scope);
+      const blob = new Blob([content], { type: "text/plain" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url; a.download = `${scope}.env`; a.click();
+      URL.revokeObjectURL(url);
+      toast(`Exported "${scope}" env vars.`, "success");
+    } catch (err) {
+      toast(String(err), "error");
+    }
+  }
+
+  // Feature 7.6: drag-and-drop
+  const [dragging, setDragging] = useState(false);
+
+  function handleDragOver(e: React.DragEvent) {
+    e.preventDefault();
+    setDragging(true);
+  }
+
+  function handleDragLeave() {
+    setDragging(false);
+  }
+
+  async function handleDrop(e: React.DragEvent) {
+    e.preventDefault();
+    setDragging(false);
+    const file = e.dataTransfer.files[0];
+    if (!file) return;
+    const content = await file.text();
+    await handleImportContent(content);
   }
 
   const filtered = vars?.filter(v =>
@@ -80,7 +121,32 @@ export function Environments() {
   );
 
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: "1.5rem" }}>
+    <div
+      style={{ display: "flex", flexDirection: "column", gap: "1.5rem", position: "relative" }}
+      onDragOver={handleDragOver}
+      onDragLeave={handleDragLeave}
+      onDrop={handleDrop}
+    >
+      {dragging && (
+        <div
+          style={{
+            position: "fixed",
+            inset: 0,
+            background: "rgba(0,0,0,0.7)",
+            border: "3px dashed var(--green)",
+            borderRadius: 12,
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            zIndex: 50,
+            pointerEvents: "none",
+          }}
+        >
+          <span style={{ fontSize: 18, color: "var(--green)", fontWeight: 600 }}>
+            Drop .env file to import
+          </span>
+        </div>
+      )}
       <h1 style={{ fontSize: 18, fontWeight: 700, color: "var(--text)", margin: 0 }}>Environments</h1>
 
       {/* Scope filter + import/export */}

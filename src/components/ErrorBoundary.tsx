@@ -13,12 +13,13 @@ export class ErrorBoundary extends Component<Props, State> {
   render() {
     if (this.state.error) {
       return (
-        <div style={{ padding: "2rem", color: "var(--error)", fontFamily: "var(--font-mono)", fontSize: 13 }}>
-          <div style={{ marginBottom: 8, fontWeight: 600 }}>Something went wrong</div>
-          <div style={{ color: "var(--text-3)", fontSize: 12 }}>{this.state.error.message}</div>
+        <div className="p-8 font-mono text-[13px]" style={{ color: "var(--error)" }}>
+          <div className="mb-2 font-semibold">Something went wrong</div>
+          <div className="text-[12px]" style={{ color: "var(--text-3)" }}>{this.state.error.message}</div>
           <button
             onClick={() => this.setState({ error: null })}
-            style={{ marginTop: 12, padding: "4px 12px", borderRadius: 4, border: "1px solid var(--border-hi)", background: "var(--surface-2)", color: "var(--text-2)", cursor: "pointer", fontSize: 12 }}
+            className="mt-3 px-3 py-1 rounded text-[12px] cursor-pointer"
+            style={{ border: "1px solid var(--border-hi)", background: "var(--surface-2)", color: "var(--text-2)" }}
           >
             Retry
           </button>

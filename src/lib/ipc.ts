@@ -8,6 +8,7 @@ export interface ContainerInfo {
   state: "running" | "exited" | "paused" | "restarting" | string;
   ports: string[];
   created: number;
+  compose_project?: string;
 }
 
 export interface ContainerDetails extends ContainerInfo {
@@ -22,6 +23,12 @@ export interface HostStats {
   mem_total_mb: number;
   disk_used_gb: number;
   disk_total_gb: number;
+}
+
+export interface ContainerStats {
+  cpu_percent: number;
+  mem_used_mb: number;
+  mem_limit_mb: number;
 }
 
 export interface EnvVar {
@@ -59,6 +66,14 @@ export interface AppInfo {
   db_path: string;
 }
 
+export interface VolumeInfo {
+  name: string;
+  driver: string;
+  mountpoint: string;
+  scope: string;
+  created: string;
+}
+
 export const ipc = {
   getAppInfo: () => invoke<AppInfo>("get_app_info"),
   testDockerConnection: (socketPath?: string) =>
@@ -69,10 +84,12 @@ export const ipc = {
   stopContainer: (id: string) => invoke<ContainerInfo>("stop_container", { id }),
   restartContainer: (id: string) => invoke<ContainerInfo>("restart_container", { id }),
   inspectContainer: (id: string) => invoke<ContainerDetails>("inspect_container", { id }),
+  getContainerStats: (id: string) => invoke<ContainerStats>("get_container_stats", { id }),
   streamLogs: (containerId: string, tail?: number) =>
     invoke<void>("stream_logs", { containerId, tail: tail ?? null }),
   stopLogs: () => invoke<void>("stop_logs"),
   streamDockerEvents: () => invoke<void>("stream_docker_events"),
+  stopDockerEvents: () => invoke<void>("stop_docker_events"),
   getHostStats: () => invoke<HostStats>("get_host_stats"),
   listEnvVars: (scope?: string) => invoke<EnvVar[]>("list_env_vars", { scope: scope ?? null }),
   upsertEnvVar: (key: string, value: string, scope: string) =>
@@ -82,4 +99,8 @@ export const ipc = {
   exportEnvScope: (scope: string) => invoke<string>("export_env_scope", { scope }),
   getNetworkTopology: () => invoke<NetworkInfo[]>("get_network_topology"),
   inspectNetwork: (id: string) => invoke<NetworkInfo>("inspect_network", { id }),
+  listVolumes: () => invoke<VolumeInfo[]>("list_volumes"),
+  pruneVolumes: () => invoke<number>("prune_volumes"),
+  getSetting: (key: string) => invoke<string | null>("get_setting", { key }),
+  setSetting: (key: string, value: string) => invoke<void>("set_setting", { key, value }),
 };

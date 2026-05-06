@@ -51,8 +51,8 @@ function NetworkDetailModal({ net, onClose }: { net: NetworkInfo; onClose: () =>
               </tr>
             </thead>
             <tbody>
-              {net.containers.map((c, i) => (
-                <tr key={i} style={{ borderBottom: "1px solid var(--border-light)" }}>
+              {net.containers.map((c) => (
+                <tr key={c.mac || c.name} style={{ borderBottom: "1px solid var(--border-light)" }}>
                   <td style={{ padding: "7px 8px", color: "var(--green)" }}>{c.name}</td>
                   <td style={{ padding: "7px 8px", color: "var(--text-2)" }}>{c.ipv4 || "—"}</td>
                   <td style={{ padding: "7px 8px", color: "var(--text-3)" }}>{c.mac || "—"}</td>
@@ -131,8 +131,8 @@ export function Network() {
                   <span style={{ fontSize: 12, color: "var(--text-3)" }}>No containers attached</span>
                 ) : (
                   <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
-                    {net.containers.map((c, i) => (
-                      <div key={i} style={{ display: "flex", flexDirection: "column", background: "var(--surface-2)", border: "1px solid var(--border)", borderRadius: 4, padding: "4px 10px" }}>
+                    {net.containers.map((c) => (
+                      <div key={c.mac || c.name} style={{ display: "flex", flexDirection: "column", background: "var(--surface-2)", border: "1px solid var(--border)", borderRadius: 4, padding: "4px 10px" }}>
                         <span style={{ fontSize: 11, color: "var(--green)", fontFamily: "var(--font-mono)" }}>{c.name}</span>
                         {c.ipv4 && <span style={{ fontSize: 10, color: "var(--text-3)", fontFamily: "var(--font-mono)" }}>{c.ipv4}</span>}
                       </div>

@@ -54,7 +54,7 @@ pnpm install
 pnpm tauri dev
 ```
 
-The app window opens automatically. Make sure Docker is running before launching.
+The app window opens automatically. The app will start successfully even if Docker is not running, displaying appropriate error messages in the UI when Docker features are accessed.
 
 ### Production Build
 

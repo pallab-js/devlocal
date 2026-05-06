@@ -71,6 +71,7 @@ export function Dashboard() {
   const [paused, setPaused] = useState(false);
   const [detailsId, setDetailsId] = useState<string | null>(null);
   const [events, setEvents] = useState<DockerEvent[]>([]);
+  const [groupByCompose, setGroupByCompose] = useState(false);
 
   useEffect(() => {
     const handler = () => setPaused(document.hidden);
@@ -82,14 +83,17 @@ export function Dashboard() {
     ipc.streamDockerEvents().catch(() => {});
     const unlisten = listen<DockerEvent>("docker-event", (e) => {
       setEvents((prev) => [e.payload, ...prev].slice(0, 20));
+      if (e.payload.kind === "network") {
+        qc.invalidateQueries({ queryKey: ["network-topology"] });
+      }
     });
     return () => { unlisten.then((fn) => fn()); };
-  }, []);
+  }, [qc]);
 
   const { data: containers, isLoading: cLoading, error: cError, isFetching } = useContainers(paused);
   const { start, stop, restart } = useContainerMutations();
   const { data: stats, isLoading: sLoading } = useHostStats(paused);
-  const { data: networks } = useNetworkTopology(paused);
+  const { data: networks } = useNetworkTopology();
 
   const runningCount = containers?.filter(c => c.state === "running").length ?? 0;
   const totalCount = containers?.length ?? 0;
@@ -127,6 +131,12 @@ export function Dashboard() {
             </span>
           )}
           <button
+            onClick={() => setGroupByCompose((v) => !v)}
+            style={{ fontSize: 11, padding: "4px 10px", borderRadius: 4, border: `1px solid ${groupByCompose ? "var(--violet)" : "var(--border)"}`, background: groupByCompose ? "var(--violet-dim)" : "var(--surface-2)", color: groupByCompose ? "var(--violet)" : "var(--text-3)", cursor: "pointer", fontFamily: "var(--font-mono)", marginRight: 8 }}
+          >
+            Compose
+          </button>
+          <button
             onClick={() => qc.invalidateQueries({ queryKey: ["containers"] })}
             disabled={isFetching}
             style={{ fontSize: 11, padding: "4px 12px", borderRadius: 4, border: "1px solid var(--border)", background: "var(--surface-2)", color: isFetching ? "var(--text-3)" : "var(--text-2)", cursor: isFetching ? "not-allowed" : "pointer", fontFamily: "var(--font-mono)" }}
@@ -138,7 +148,7 @@ export function Dashboard() {
         {cLoading && <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>{[0,1,2].map(i => <Skeleton key={i} height={36} />)}</div>}
         {cError && <p style={{ color: "var(--error)", fontSize: 13 }}>Docker unavailable — is the daemon running?</p>}
         {containers && containers.length === 0 && <p style={{ color: "var(--text-3)", fontSize: 13 }}>No containers found.</p>}
-        {containers && containers.length > 0 && (
+        {containers && containers.length > 0 && !groupByCompose && (
           <table style={{ width: "100%", borderCollapse: "collapse" }}>
             <thead>
               <tr style={{ borderBottom: "1px solid var(--border)" }}>
@@ -158,6 +168,15 @@ export function Dashboard() {
               ))}
             </tbody>
           </table>
+        )}
+        {containers && containers.length > 0 && groupByCompose && (
+          <ComposeGroupedView
+            containers={containers}
+            onStart={(id) => start.mutate(id)}
+            onStop={(id) => stop.mutate(id)}
+            onRestart={(id) => restart.mutate(id)}
+            onDetails={setDetailsId}
+          />
         )}
       </section>
 
@@ -214,6 +233,65 @@ function StatItem({ label, value, pct, max }: { label: string; value: string; pc
         <span style={{ fontSize: 12, color: "var(--text-2)", fontFamily: "var(--font-mono)" }}>{value}</span>
       </div>
       <ProgressBar value={pct} max={max} />
+    </div>
+  );
+}
+
+function ComposeGroupedView({ containers, onStart, onStop, onRestart, onDetails }: {
+  containers: ContainerInfo[];
+  onStart: (id: string) => void;
+  onStop: (id: string) => void;
+  onRestart: (id: string) => void;
+  onDetails: (id: string) => void;
+}) {
+  const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
+
+  const groups = containers.reduce<Record<string, ContainerInfo[]>>((acc, c) => {
+    const key = c.compose_project ?? "__standalone__";
+    (acc[key] ??= []).push(c);
+    return acc;
+  }, {});
+
+  function toggleGroup(key: string) {
+    setCollapsed((prev) => {
+      const next = new Set(prev);
+      next.has(key) ? next.delete(key) : next.add(key);
+      return next;
+    });
+  }
+
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+      {Object.entries(groups).map(([project, items]) => {
+        const isCollapsed = collapsed.has(project);
+        const label = project === "__standalone__" ? "Standalone" : project;
+        return (
+          <div key={project} style={{ border: "1px solid var(--border-light)", borderRadius: 6, overflow: "hidden" }}>
+            <button
+              onClick={() => toggleGroup(project)}
+              style={{ width: "100%", display: "flex", alignItems: "center", gap: 8, padding: "8px 12px", background: "var(--surface-hi)", border: "none", cursor: "pointer", textAlign: "left" }}
+            >
+              <span style={{ fontSize: 10, color: "var(--text-3)" }}>{isCollapsed ? "▶" : "▼"}</span>
+              <span style={{ fontSize: 12, fontWeight: 600, color: project === "__standalone__" ? "var(--text-3)" : "var(--violet)", fontFamily: "var(--font-mono)" }}>{label}</span>
+              <span style={{ fontSize: 10, color: "var(--text-3)", fontFamily: "var(--font-mono)" }}>({items.length})</span>
+            </button>
+            {!isCollapsed && (
+              <table style={{ width: "100%", borderCollapse: "collapse" }}>
+                <tbody>
+                  {items.map((c) => (
+                    <ContainerRow key={c.id} c={c}
+                      onStart={() => onStart(c.id)}
+                      onStop={() => onStop(c.id)}
+                      onRestart={() => onRestart(c.id)}
+                      onDetails={() => onDetails(c.id)}
+                    />
+                  ))}
+                </tbody>
+              </table>
+            )}
+          </div>
+        );
+      })}
     </div>
   );
 }

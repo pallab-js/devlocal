@@ -2,10 +2,11 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { ipc } from "../lib/ipc";
 
 export function useContainers(paused = false) {
+  const interval = Number(localStorage.getItem("poll_containers") ?? 5000);
   return useQuery({
     queryKey: ["containers"],
     queryFn: () => ipc.listContainers(),
-    refetchInterval: paused ? false : 5000,
+    refetchInterval: paused ? false : interval,
   });
 }
 
@@ -21,10 +22,11 @@ export function useContainerMutations() {
 }
 
 export function useHostStats(paused = false) {
+  const interval = Number(localStorage.getItem("poll_stats") ?? 3000);
   return useQuery({
     queryKey: ["host-stats"],
     queryFn: () => ipc.getHostStats(),
-    refetchInterval: paused ? false : 3000,
+    refetchInterval: paused ? false : interval,
   });
 }
 
@@ -49,10 +51,9 @@ export function useEnvVarMutations() {
   return { upsert, remove };
 }
 
-export function useNetworkTopology(paused = false) {
+export function useNetworkTopology() {
   return useQuery({
     queryKey: ["network-topology"],
     queryFn: () => ipc.getNetworkTopology(),
-    refetchInterval: paused ? false : 10000,
   });
 }
