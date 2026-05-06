@@ -17,7 +17,7 @@ export function SideNav() {
           key={to}
           to={to}
           end={to === "/"}
-          className={({ isActive }) => `
+          className={({ isActive }: { isActive: boolean }) => `
             flex items-center gap-[10px] px-4 py-2 text-[13px] font-medium transition-all duration-150 border-l-2 no-underline
             ${isActive ? "text-green bg-green/10 border-green" : "text-text-2 bg-transparent border-transparent"}
           `}
