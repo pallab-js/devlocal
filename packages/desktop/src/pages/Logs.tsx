@@ -54,6 +54,24 @@ function formatTs(ts: string): string {
   }
 }
 
+function highlightText(text: string, query: string): React.ReactNode {
+  if (!query) return text;
+  const parts = text.split(new RegExp(`(${query})`, "gi"));
+  return (
+    <>
+      {parts.map((part, i) =>
+        part.toLowerCase() === query.toLowerCase() ? (
+          <mark key={i} className="bg-yellow-500/40 text-yellow-200">
+            {part}
+          </mark>
+        ) : (
+          part
+        )
+      )}
+    </>
+  );
+}
+
 export function Logs() {
   const { data: containers, isLoading: cLoading } = useContainers();
   const [selectedId, setSelectedId] = useState("");
@@ -355,7 +373,7 @@ export function Logs() {
                       {formatTs(line.ts)}
                     </span>
                   )}
-                  <span>{line.text}</span>
+                  <span>{highlightText(line.text, debouncedSearch)}</span>
                 </div>
               );
             })}
