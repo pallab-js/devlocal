@@ -27,3 +27,5 @@ thiserror = "2"
 chrono = { version = "0.4", features = ["serde"] }
 keyring = "3"
 docker-ops = { path = "../../../crates/docker-ops" }
+db = { path = "../../../crates/db" }
+tauri-shell = { path = "../../../crates/tauri-shell" }
