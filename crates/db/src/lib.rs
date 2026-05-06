@@ -31,6 +31,10 @@ pub async fn init(app: &tauri::AppHandle) -> Result<(), String> {
     let data_dir = app.path().app_data_dir().map_err(|e| e.to_string())?;
     std::fs::create_dir_all(&data_dir).map_err(|e| e.to_string())?;
     let db_path = data_dir.join("devopslocal.db");
+
+    // Task 4: Automatic DB Backup
+    auto_backup(&db_path).await?;
+
     let url = format!("sqlite://{}?mode=rwc", db_path.display());
 
     let pool = SqlitePoolOptions::new()
@@ -78,6 +82,21 @@ pub struct EnvVar {
     pub scope: String,
 }
 
+#[derive(Debug, Serialize, Deserialize, TS)]
+#[ts(export, export_to = "../../packages/shared/types/")]
+pub struct DbPoolStats {
+    pub size: usize,
+    pub idle: usize,
+}
+
+pub fn get_pool_stats() -> Result<DbPoolStats, String> {
+    let pool = pool()?;
+    Ok(DbPoolStats {
+        size: pool.size() as usize,
+        idle: pool.num_idle() as usize,
+    })
+}
+
 /// Bug 1.5: wrap all inserts in a transaction for atomicity.
 pub async fn import_env_file_inner(
     pool: &SqlitePool,
@@ -112,6 +131,43 @@ pub async fn import_env_file_inner(
     }
     tx.commit().await.map_err(|e| e.to_string())?;
     Ok(count)
+}
+
+async fn auto_backup(db_path: &std::path::Path) -> Result<(), String> {
+    if !db_path.exists() {
+        return Ok(());
+    }
+
+    let parent = db_path.parent().ok_or("Invalid DB path")?;
+    let backups_dir = parent.join("backups");
+    std::fs::create_dir_all(&backups_dir).map_err(|e| e.to_string())?;
+
+    let now = chrono::Local::now();
+    let backup_name = format!("devopslocal-{}.db", now.format("%Y%m%d"));
+    let backup_path = backups_dir.join(backup_name);
+
+    if !backup_path.exists() {
+        std::fs::copy(db_path, &backup_path).map_err(|e| e.to_string())?;
+    }
+
+    // Retention: keep last 7 files
+    let mut entries = std::fs::read_dir(&backups_dir)
+        .map_err(|e| e.to_string())?
+        .filter_map(|res| res.ok())
+        .map(|e| e.path())
+        .filter(|p| p.is_file() && p.extension().map_or(false, |ext| ext == "db"))
+        .collect::<Vec<_>>();
+
+    entries.sort();
+
+    if entries.len() > 7 {
+        let to_delete = entries.len() - 7;
+        for path in entries.iter().take(to_delete) {
+            std::fs::remove_file(path).map_err(|e| e.to_string())?;
+        }
+    }
+
+    Ok(())
 }
 
 // ── Unit tests ───────────────────────────────────────────────────────────────
@@ -310,6 +366,42 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(total.0, 4); // 3 new + 1 existing
+    }
+
+    #[tokio::test]
+    async fn test_auto_backup() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let db_path = temp_dir.path().join("devopslocal.db");
+
+        // 1. No DB file yet
+        auto_backup(&db_path).await.unwrap();
+        assert!(!temp_dir.path().join("backups").exists());
+
+        // 2. Create DB file
+        std::fs::write(&db_path, "sqlite data").unwrap();
+        auto_backup(&db_path).await.unwrap();
+
+        let backups_dir = temp_dir.path().join("backups");
+        assert!(backups_dir.exists());
+        let entries = std::fs::read_dir(&backups_dir).unwrap().collect::<Vec<_>>();
+        assert_eq!(entries.len(), 1);
+
+        // 3. Retention test: create 8 dummy backup files
+        for i in 1..=8 {
+            let name = format!("devopslocal-202601{:02}.db", i);
+            std::fs::write(backups_dir.join(name), "old data").unwrap();
+        }
+
+        auto_backup(&db_path).await.unwrap();
+        let mut final_entries = std::fs::read_dir(&backups_dir)
+            .unwrap()
+            .map(|res| res.unwrap().file_name().into_string().unwrap())
+            .collect::<Vec<_>>();
+        final_entries.sort();
+
+        // We added 1 backup in step 2, then 8 manual ones = 9 files.
+        // Pruned to 7.
+        assert_eq!(final_entries.len(), 7);
     }
 
     #[tokio::test]

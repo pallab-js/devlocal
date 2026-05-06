@@ -7,6 +7,10 @@ edition = "2021"
 sqlx = { version = "0.8", features = ["sqlite", "runtime-tokio", "macros", "migrate"] }
 serde = { version = "1", features = ["derive"] }
 tokio = { version = "1", features = ["full"] }
+chrono = "0.4"
 keyring = "3"
 tauri = { version = "2" }
 ts-rs = { version = "10", features = ["serde-compat"] }
+
+[dev-dependencies]
+tempfile = "3"
