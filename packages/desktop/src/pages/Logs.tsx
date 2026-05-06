@@ -15,9 +15,11 @@ interface LogLine {
   ts: string;
   text: string;
   level: Level;
+  containerId: string;
 }
 
 interface RawLogPayload {
+  container_id: string;
   ts: string;
   text: string;
 }
@@ -74,7 +76,7 @@ function highlightText(text: string, query: string): React.ReactNode {
 
 export function Logs() {
   const { data: containers, isLoading: cLoading } = useContainers();
-  const [selectedId, setSelectedId] = useState("");
+  const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [lines, setLines] = useState<LogLine[]>([]);
   const [filter, setFilter] = useState<Level>("ALL");
   const [search, setSearch] = useState("");
@@ -85,25 +87,37 @@ export function Logs() {
   const idRef = useRef(0);
   const scrollRef = useRef<HTMLDivElement>(null);
 
-  const startStream = useCallback((containerId: string, tailSize: number) => {
+  const containerNames = useMemo(() => {
+    const m: Record<string, string> = {};
+    containers?.forEach((c) => (m[c.id] = c.name));
+    return m;
+  }, [containers]);
+
+  const toggleContainer = useCallback((id: string) => {
+    setSelectedIds((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]));
     setLines([]);
-    setStreaming(false);
-    ipc
-      .streamLogs(containerId, tailSize || undefined)
-      .then(() => setStreaming(true))
-      .catch(() => setStreaming(false));
   }, []);
 
   useEffect(() => {
-    if (!selectedId) return;
-    startStream(selectedId, tail);
+    if (selectedIds.length === 0) {
+      setStreaming(false);
+      ipc.stopLogs().catch(() => {});
+      return;
+    }
+
+    selectedIds.forEach((id) => {
+      ipc.streamLogs(id, tail).catch(() => {});
+    });
 
     const unlisten = listen<RawLogPayload>("log-line", (event) => {
       setStreaming(true);
       idRef.current += 1;
       const id = idRef.current;
-      const { ts, text } = event.payload;
-      setLines((prev) => [...prev.slice(-4999), { id, ts, text, level: detectLevel(text) }]);
+      const { container_id, ts, text } = event.payload;
+      setLines((prev) => [
+        ...prev.slice(-4999),
+        { id, ts, text, level: detectLevel(text), containerId: container_id },
+      ]);
     });
 
     return () => {
@@ -111,7 +125,7 @@ export function Logs() {
       unlisten.then((fn) => fn());
       ipc.stopLogs().catch(() => {});
     };
-  }, [selectedId, tail, startStream]);
+  }, [selectedIds, tail]);
 
   const visible = useMemo(() => {
     return lines.filter((l) => {
@@ -144,21 +158,27 @@ export function Logs() {
   }
 
   async function copyToClipboard() {
-    const text = visible.map((l) => `${l.ts ? formatTs(l.ts) + " " : ""}${l.text}`).join("\n");
+    const text = visible
+      .map((l) => `${l.ts ? formatTs(l.ts) + " " : ""}[${containerNames[l.containerId] || "unknown"}] ${l.text}`)
+      .join("\n");
     await navigator.clipboard.writeText(text);
   }
 
   async function exportLogs() {
     if (visible.length === 0) return;
 
-    const containerName = containers?.find((c) => c.id === selectedId)?.name || "container";
+    const name =
+      selectedIds.length === 1 ? containerNames[selectedIds[0]] : `${selectedIds.length}-containers`;
+
     const path = await save({
       filters: [{ name: "Logs", extensions: ["log", "txt"] }],
-      defaultPath: `${containerName}-logs.log`,
+      defaultPath: `${name}-logs.log`,
     });
 
     if (path) {
-      const text = visible.map((l) => `${l.ts ? l.ts + " " : ""}${l.text}`).join("\n");
+      const text = visible
+        .map((l) => `${l.ts ? l.ts + " " : ""}[${containerNames[l.containerId] || "unknown"}] ${l.text}`)
+        .join("\n");
       await writeTextFile(path, text);
     }
   }
@@ -179,25 +199,37 @@ export function Logs() {
       <h1 style={{ fontSize: 18, fontWeight: 700, color: "var(--text)", margin: 0 }}>Logs</h1>
 
       {/* Row 1: container + tail + streaming indicator */}
-      <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+      <div style={{ display: "flex", gap: 12, alignItems: "center", flexWrap: "wrap" }}>
         {cLoading ? (
           <Skeleton width={200} height={32} />
         ) : (
-          <select
-            value={selectedId}
-            onChange={(e) => setSelectedId(e.target.value)}
-            style={{ ...sel, minWidth: 200 }}
-          >
-            <option value="">Select container…</option>
-            {containers?.map((c) => (
-              <option key={c.id} value={c.id}>
-                {c.name}
-              </option>
-            ))}
-          </select>
+          <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+            {containers?.map((c) => {
+              const active = selectedIds.includes(c.id);
+              return (
+                <button
+                  key={c.id}
+                  onClick={() => toggleContainer(c.id)}
+                  style={{
+                    fontSize: 10,
+                    padding: "4px 10px",
+                    borderRadius: 4,
+                    border: `1px solid ${active ? "var(--blue)" : "var(--border)"}`,
+                    background: active ? "var(--blue-dim)" : "var(--surface-1)",
+                    color: active ? "var(--blue)" : "var(--text-3)",
+                    cursor: "pointer",
+                    fontFamily: "var(--font-mono)",
+                    transition: "all 0.1s",
+                  }}
+                >
+                  {c.name}
+                </button>
+              );
+            })}
+          </div>
         )}
 
-        <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 4, marginLeft: "auto" }}>
           <span style={{ fontSize: 11, color: "var(--text-3)", fontFamily: "var(--font-mono)" }}>Tail</span>
           <select value={tail} onChange={(e) => setTail(Number(e.target.value))} style={sel}>
             {TAIL_OPTIONS.map((o) => (
@@ -208,7 +240,7 @@ export function Logs() {
           </select>
         </div>
 
-        {selectedId && (
+        {selectedIds.length > 0 && (
           <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
             <div
               style={{
@@ -233,7 +265,7 @@ export function Logs() {
         )}
 
         {/* Stop / Clear / Copy / Export */}
-        <div style={{ display: "flex", gap: 6, marginLeft: "auto" }}>
+        <div style={{ display: "flex", gap: 6 }}>
           {streaming && (
             <button
               onClick={() => {
@@ -344,8 +376,8 @@ export function Logs() {
           position: "relative",
         }}
       >
-        {!selectedId && <p style={{ color: "var(--text-3)" }}>Select a container to stream logs.</p>}
-        {selectedId && visible.length === 0 && lines.length > 0 && (
+        {!selectedIds.length && <p style={{ color: "var(--text-3)" }}>Select containers to stream logs.</p>}
+        {selectedIds.length > 0 && visible.length === 0 && lines.length > 0 && (
           <p style={{ color: "var(--text-3)" }}>No lines match the current filter.</p>
         )}
 
@@ -368,11 +400,20 @@ export function Logs() {
                     wordBreak: "break-all",
                   }}
                 >
-                  {line.ts && (
-                    <span style={{ color: "var(--text-3)", flexShrink: 0, userSelect: "none" }}>
-                      {formatTs(line.ts)}
+                  <div style={{ display: "flex", gap: 8, flexShrink: 0, userSelect: "none" }}>
+                    {line.ts && <span style={{ color: "var(--text-3)" }}>{formatTs(line.ts)}</span>}
+                    <span
+                      style={{
+                        color: "var(--text-2)",
+                        background: "var(--surface-2)",
+                        padding: "0 4px",
+                        borderRadius: 2,
+                        fontSize: 10,
+                      }}
+                    >
+                      {containerNames[line.containerId] || "???"}
                     </span>
-                  )}
+                  </div>
                   <span>{highlightText(line.text, debouncedSearch)}</span>
                 </div>
               );

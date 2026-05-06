@@ -40,3 +40,13 @@ pub async fn get_setting(key: String) -> Result<Option<String>> {
 pub async fn set_setting(key: String, value: String) -> Result<()> {
     Ok(db::commands::set_setting(key, value).await.map_err(|e| crate::error::AppError::Generic(e))?)
 }
+
+#[tauri::command]
+pub async fn import_secrets(content: String, format: String, scope: String) -> Result<u32> {
+    Ok(db::commands::import_secrets(content, format, scope).await.map_err(|e| crate::error::AppError::Generic(e))?)
+}
+
+#[tauri::command]
+pub async fn get_db_pool_stats() -> Result<db::DbPoolStats> {
+    Ok(db::commands::get_db_pool_stats().await.map_err(|e| crate::error::AppError::Generic(e))?)
+}

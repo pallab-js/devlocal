@@ -4,6 +4,7 @@ pub mod error;
 pub mod settings;
 
 use crate::docker::{DockerState, EventStreamState, LogStreamState, SysState};
+use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 use sysinfo::System;
 use tauri::Manager;
@@ -35,7 +36,7 @@ pub fn run(context: tauri::Context) {
         .plugin(tauri_plugin_fs::init())
         .plugin(tauri_plugin_updater::Builder::new().build())
         .manage(DockerState(docker.map(Arc::new)))
-        .manage(LogStreamState(Mutex::new(None)))
+        .manage(LogStreamState(Mutex::new(HashMap::new())))
         .manage(EventStreamState(Mutex::new(None)))
         .manage(SysState(Mutex::new(System::new())))
         .setup(|app| {
@@ -96,10 +97,13 @@ pub fn run(context: tauri::Context) {
             docker::list_images,
             docker::remove_image,
             docker::pull_image,
+            docker::compose_up,
+            docker::compose_down,
             db::list_env_vars,
             db::upsert_env_var,
             db::delete_env_var,
             db::import_env_file,
+            db::import_secrets,
             db::export_env_scope,
             db::clear_all_env_vars,
             db::get_setting,
@@ -118,7 +122,7 @@ mod tests {
     use db::EnvVar;
     use docker_ops::{
         ContainerDetails, ContainerInfo, ContainerStats, DockerEvent, HostStats, ImageInfo,
-        NetworkContainer, NetworkInfo, PullProgress, VolumeInfo,
+        LogLine, NetworkContainer, NetworkInfo, PullProgress, VolumeInfo,
     };
     use ts_rs::TS;
 
@@ -139,5 +143,6 @@ mod tests {
         let _ = <VolumeInfo as TS>::decl();
         let _ = <ImageInfo as TS>::decl();
         let _ = <PullProgress as TS>::decl();
+        let _ = <LogLine as TS>::decl();
     }
 }

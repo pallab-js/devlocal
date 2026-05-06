@@ -4,9 +4,10 @@ use bollard::system::EventsOptions;
 use bollard::Docker;
 use docker_ops::{
     self, ContainerDetails, ContainerInfo, ContainerStats, DockerEvent, HostStats, ImageInfo,
-    NetworkInfo, VolumeInfo,
+    LogLine, NetworkInfo, VolumeInfo,
 };
 use futures_util::StreamExt;
+use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 use sysinfo::System;
 use tauri::{AppHandle, Emitter, State};
@@ -14,7 +15,7 @@ use tokio::task::JoinHandle;
 
 // ── Managed state ────────────────────────────────────────────────────────────
 
-pub struct LogStreamState(pub Mutex<Option<JoinHandle<()>>>);
+pub struct LogStreamState(pub Mutex<HashMap<String, JoinHandle<()>>>);
 pub struct EventStreamState(pub Mutex<Option<JoinHandle<()>>>);
 pub struct SysState(pub Mutex<System>);
 pub struct DockerState(pub Option<Arc<Docker>>);
@@ -116,7 +117,7 @@ pub async fn stream_logs(
     let docker = docker.0.as_ref().ok_or_else(|| crate::error::AppError::Generic("Docker not connected".to_string()))?;
     {
         let mut guard = log_state.0.lock().map_err(|e| crate::error::AppError::Generic(e.to_string()))?;
-        if let Some(old) = guard.take() {
+        if let Some(old) = guard.remove(&container_id) {
             old.abort();
         }
     }
@@ -134,8 +135,9 @@ pub async fn stream_logs(
     };
 
     let docker_clone = Arc::clone(docker);
+    let cid_clone = container_id.clone();
     let handle = tokio::spawn(async move {
-        let mut stream = docker_clone.logs(&container_id, Some(opts));
+        let mut stream = docker_clone.logs(&cid_clone, Some(opts));
         while let Some(Ok(msg)) = stream.next().await {
             let raw = msg.to_string();
             let (ts, text) = if let Some(idx) = raw.find(' ') {
@@ -143,20 +145,33 @@ pub async fn stream_logs(
             } else {
                 (String::new(), raw)
             };
-            let _ = app.emit("log-line", serde_json::json!({ "ts": ts, "text": text }));
+            let _ = app.emit("log-line", LogLine {
+                container_id: cid_clone.clone(),
+                ts,
+                text,
+            });
         }
     });
 
     let mut guard = log_state.0.lock().map_err(|e| crate::error::AppError::Generic(e.to_string()))?;
-    *guard = Some(handle);
+    guard.insert(container_id, handle);
     Ok(())
 }
 
 #[tauri::command]
-pub async fn stop_logs(log_state: State<'_, LogStreamState>) -> Result<()> {
+pub async fn stop_logs(
+    container_id: Option<String>,
+    log_state: State<'_, LogStreamState>
+) -> Result<()> {
     let mut guard = log_state.0.lock().map_err(|e| crate::error::AppError::Generic(e.to_string()))?;
-    if let Some(handle) = guard.take() {
-        handle.abort();
+    if let Some(id) = container_id {
+        if let Some(handle) = guard.remove(&id) {
+            handle.abort();
+        }
+    } else {
+        for (_, handle) in guard.drain() {
+            handle.abort();
+        }
     }
     Ok(())
 }
@@ -259,6 +274,16 @@ pub async fn pull_image(
     });
 
     Ok(())
+}
+
+#[tauri::command]
+pub async fn compose_up(project_name: String, config_dir: String) -> Result<()> {
+    Ok(docker_ops::compose_up(&project_name, &config_dir).await?)
+}
+
+#[tauri::command]
+pub async fn compose_down(project_name: String, config_dir: String) -> Result<()> {
+    Ok(docker_ops::compose_down(&project_name, &config_dir).await?)
 }
 
 pub fn start_health_monitor(app: AppHandle, docker: Arc<Docker>) {

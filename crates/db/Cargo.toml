@@ -9,6 +9,8 @@ serde = { version = "1", features = ["derive"] }
 tokio = { version = "1", features = ["full"] }
 chrono = "0.4"
 keyring = "3"
+serde_yaml = "0.9"
+base64 = "0.22"
 tauri = { version = "2" }
 ts-rs = { version = "10", features = ["serde-compat"] }
 

@@ -20,6 +20,7 @@ export function Environments() {
   const [masked, setMasked] = useState<Set<number>>(new Set());
   const [formError, setFormError] = useState("");
   const fileRef = useRef<HTMLInputElement>(null);
+  const [importMenuOpen, setImportMenuOpen] = useState(false);
   const { toast } = useToast();
 
   const { data: vars, isLoading } = useEnvVars(scope);
@@ -76,6 +77,35 @@ export function Environments() {
     }
     // reset file input
     if (fileRef.current) fileRef.current.value = "";
+  }
+
+  async function handleImportSecrets(format: "docker" | "kubernetes") {
+    try {
+      const { open } = await import("@tauri-apps/plugin-dialog");
+      const path = await open({
+        multiple: false,
+        filters: [
+          {
+            name: format === "kubernetes" ? "YAML" : "Docker Secret/Env",
+            extensions: format === "kubernetes" ? ["yaml", "yml"] : ["*", "env"],
+          },
+        ],
+      });
+      if (!path || Array.isArray(path)) return;
+
+      const { readTextFile } = await import("@tauri-apps/plugin-fs");
+      const content = await readTextFile(path);
+
+      const count = await ipc.importSecrets(content, format, scope);
+      toast(
+        `Imported ${count} variable(s) from ${format} file into "${scope}".`,
+        "success"
+      );
+    } catch (err) {
+      toast(String(err), "error");
+    } finally {
+      setImportMenuOpen(false);
+    }
   }
 
   async function handleImportContent(content: string) {
@@ -166,15 +196,39 @@ export function Environments() {
             cursor: "pointer", fontFamily: "var(--font-mono)", textTransform: "uppercase", letterSpacing: "0.8px",
           }}>{s}</button>
         ))}
-        <div style={{ marginLeft: "auto", display: "flex", gap: 6 }}>
-          <label style={{
-            fontSize: 11, padding: "4px 12px", borderRadius: 4,
-            border: "1px solid var(--border)", background: "var(--surface)",
-            color: "var(--text-3)", cursor: "pointer", fontFamily: "var(--font-mono)",
-          }}>
-            ↑ Import .env
+        <div style={{ marginLeft: "auto", display: "flex", gap: 6, position: "relative" }}>
+          <div style={{ display: "flex", gap: 0, borderRadius: 4, overflow: "hidden", border: "1px solid var(--border)" }}>
+            <button
+              onClick={() => fileRef.current?.click()}
+              style={{
+                fontSize: 11, padding: "4px 12px", background: "var(--surface)",
+                color: "var(--text-3)", cursor: "pointer", fontFamily: "var(--font-mono)", border: "none", borderRight: "1px solid var(--border)"
+              }}>
+              ↑ Import
+            </button>
+            <button
+              onClick={() => setImportMenuOpen(!importMenuOpen)}
+              style={{
+                fontSize: 11, padding: "4px 8px", background: "var(--surface)",
+                color: "var(--text-3)", cursor: "pointer", fontFamily: "var(--font-mono)", border: "none"
+              }}>
+              {importMenuOpen ? "▲" : "▼"}
+            </button>
             <input ref={fileRef} type="file" accept=".env,text/plain" onChange={handleImport} style={{ display: "none" }} />
-          </label>
+          </div>
+
+          {importMenuOpen && (
+            <div style={{
+              position: "absolute", top: "100%", right: 0, marginTop: 4,
+              background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 4,
+              boxShadow: "0 4px 12px rgba(0,0,0,0.3)", zIndex: 10, minWidth: 180, overflow: "hidden"
+            }}>
+              <button onClick={() => { fileRef.current?.click(); setImportMenuOpen(false); }} style={menuItemStyle}>.env File</button>
+              <button onClick={() => handleImportSecrets("kubernetes")} style={menuItemStyle}>Kubernetes Secret (YAML)</button>
+              <button onClick={() => handleImportSecrets("docker")} style={menuItemStyle}>Docker Secret (Env)</button>
+            </div>
+          )}
+
           <button onClick={handleExport} style={{
             fontSize: 11, padding: "4px 12px", borderRadius: 4,
             border: "1px solid var(--border)", background: "var(--surface)",
@@ -326,3 +380,16 @@ const labelStyle: React.CSSProperties = { fontSize: 10, fontFamily: "var(--font-
 const inputStyle: React.CSSProperties = { background: "var(--surface-2)", border: "1px solid var(--border)", borderRadius: 4, padding: "6px 10px", color: "var(--text)", fontSize: 12, fontFamily: "var(--font-mono)", outline: "none", minWidth: 160 };
 const submitBtn: React.CSSProperties = { padding: "7px 16px", borderRadius: 4, border: "1px solid var(--green-border)", background: "var(--green-dim)", color: "var(--green)", cursor: "pointer", fontSize: 12, fontFamily: "var(--font-mono)", fontWeight: 600 };
 const actionBtn = (color: string): React.CSSProperties => ({ fontSize: 11, padding: "2px 8px", borderRadius: 4, border: `1px solid ${color}`, background: "transparent", color, cursor: "pointer", fontFamily: "var(--font-mono)" });
+const menuItemStyle: React.CSSProperties = {
+  display: "block",
+  width: "100%",
+  padding: "8px 12px",
+  background: "transparent",
+  border: "none",
+  color: "var(--text-2)",
+  textAlign: "left",
+  fontSize: 11,
+  fontFamily: "var(--font-mono)",
+  cursor: "pointer",
+  outline: "none",
+};

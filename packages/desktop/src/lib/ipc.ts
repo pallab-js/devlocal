@@ -91,6 +91,12 @@ export interface PullProgress {
   total?: number;
 }
 
+export interface LogLine {
+  container_id: string;
+  ts: string;
+  text: string;
+}
+
 export const ipc = {
   getAppInfo: () => invoke<AppInfo>("get_app_info"),
   testDockerConnection: (socketPath?: string) =>
@@ -106,7 +112,7 @@ export const ipc = {
   getContainerStats: (id: string) => invoke<ContainerStats>("get_container_stats", { id }),
   streamLogs: (containerId: string, tail?: number) =>
     invoke<void>("stream_logs", { containerId, tail: tail ?? null }),
-  stopLogs: () => invoke<void>("stop_logs"),
+  stopLogs: (containerId?: string) => invoke<void>("stop_logs", { containerId: containerId ?? null }),
   streamDockerEvents: () => invoke<void>("stream_docker_events"),
   stopDockerEvents: () => invoke<void>("stop_docker_events"),
   getHostStats: () => invoke<HostStats>("get_host_stats"),
@@ -115,6 +121,7 @@ export const ipc = {
     invoke<EnvVar>("upsert_env_var", { key, value, scope }),
   deleteEnvVar: (id: number) => invoke<void>("delete_env_var", { id }),
   importEnvFile: (content: string, scope: string) => invoke<number>("import_env_file", { content, scope }),
+  importSecrets: (content: string, format: string, scope: string) => invoke<number>("import_secrets", { content, format, scope }),
   exportEnvScope: (scope: string) => invoke<string>("export_env_scope", { scope }),
   getNetworkTopology: () => invoke<NetworkInfo[]>("get_network_topology"),
   inspectNetwork: (id: string) => invoke<NetworkInfo>("inspect_network", { id }),

@@ -1,5 +1,4 @@
 use crate::{pool, validate_scope, EnvVar, import_env_file_inner, KEYRING_SERVICE, is_sensitive};
-use sqlx::SqlitePool;
 
 #[tauri::command]
 pub async fn list_env_vars(scope: Option<String>) -> Result<Vec<EnvVar>, String> {
@@ -114,6 +113,58 @@ pub async fn clear_all_env_vars() -> Result<u64, String> {
     Ok(result.rows_affected())
 }
 
+#[tauri::command]
+pub async fn import_secrets(content: String, format: String, scope: String) -> Result<u32, String> {
+    validate_scope(&scope)?;
+    let pool = pool()?;
+
+    match format.as_str() {
+        "kubernetes" => {
+            let yaml: serde_yaml::Value =
+                serde_yaml::from_str(&content).map_err(|e| e.to_string())?;
+            let data = yaml
+                .get("data")
+                .ok_or("No 'data' field found in Kubernetes Secret")?;
+            let data_map = data.as_mapping().ok_or("'data' field is not a map")?;
+
+            let mut tx = pool.begin().await.map_err(|e| e.to_string())?;
+            let mut count = 0u32;
+
+            use base64::Engine;
+            for (k, v) in data_map {
+                let key = k.as_str().ok_or("Key is not a string")?.to_string();
+                let encoded_val = v.as_str().ok_or("Value is not a string")?;
+
+                let decoded_bytes = base64::engine::general_purpose::STANDARD
+                    .decode(encoded_val.trim())
+                    .map_err(|e| format!("Failed to decode base64 for key {}: {}", key, e))?;
+                let value = String::from_utf8(decoded_bytes)
+                    .map_err(|e| format!("Value for key {} is not valid UTF-8: {}", key, e))?;
+
+                sqlx::query(
+                    "INSERT INTO env_vars (key, value, scope) VALUES (?, ?, ?)
+                     ON CONFLICT(key, scope) DO UPDATE SET value = excluded.value",
+                )
+                .bind(&key)
+                .bind(&value)
+                .bind(&scope)
+                .execute(&mut *tx)
+                .await
+                .map_err(|e| e.to_string())?;
+                count += 1;
+            }
+            tx.commit().await.map_err(|e| e.to_string())?;
+            Ok(count)
+        }
+        "docker" => {
+            // Docker secrets can be env files or single value files. 
+            // We reuse env file parser for multi-line support.
+            import_env_file_inner(pool, &content, &scope).await
+        }
+        _ => Err(format!("Unsupported format: {}", format)),
+    }
+}
+
 /// Architecture 4.4: settings table commands
 #[tauri::command]
 pub async fn get_setting(key: String) -> Result<Option<String>, String> {
@@ -139,4 +190,9 @@ pub async fn set_setting(key: String, value: String) -> Result<(), String> {
     .await
     .map_err(|e| e.to_string())?;
     Ok(())
+}
+
+#[tauri::command]
+pub async fn get_db_pool_stats() -> Result<crate::DbPoolStats, String> {
+    crate::get_pool_stats()
 }

@@ -3,7 +3,7 @@ use bollard::container::{
     StopContainerOptions, UpdateContainerOptions,
 };
 use bollard::image::{CreateImageOptions, ListImagesOptions, RemoveImageOptions};
-use bollard::models::{ContainerSummary, Resources};
+use bollard::models::ContainerSummary;
 use bollard::Docker;
 use futures_util::StreamExt;
 use serde::{Deserialize, Serialize};
@@ -120,6 +120,14 @@ pub struct PullProgress {
     pub total: Option<i64>,
 }
 
+#[derive(Debug, Serialize, Deserialize, Clone, TS)]
+#[ts(export, export_to = "../../packages/shared/types/")]
+pub struct LogLine {
+    pub container_id: String,
+    pub ts: String,
+    pub text: String,
+}
+
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
 pub fn summary_to_info(c: ContainerSummary) -> ContainerInfo {
@@ -217,13 +225,9 @@ pub async fn update_container_limits(
     cpu_shares: Option<i64>,
     memory_bytes: Option<i64>,
 ) -> Result<(), DockerError> {
-    let resources = Resources {
-        cpu_shares,
+    let opts: UpdateContainerOptions<String> = UpdateContainerOptions {
+        cpu_shares: cpu_shares.map(|c| c as isize),
         memory: memory_bytes,
-        ..Default::default()
-    };
-    let opts = UpdateContainerOptions {
-        resources,
         ..Default::default()
     };
     docker.update_container(id, opts).await?;
@@ -473,6 +477,47 @@ pub async fn remove_image(docker: &Docker, id: &str) -> Result<(), DockerError> 
         .remove_image(id, None::<RemoveImageOptions>, None)
         .await?;
     Ok(())
+}
+
+pub async fn compose_up(project_name: &str, config_dir: &str) -> Result<(), DockerError> {
+    let output = tokio::process::Command::new("docker")
+        .arg("compose")
+        .arg("--project-name")
+        .arg(project_name)
+        .arg("up")
+        .arg("-d")
+        .current_dir(config_dir)
+        .output()
+        .await
+        .map_err(|e| DockerError::Other(e.to_string()))?;
+
+    if output.status.success() {
+        Ok(())
+    } else {
+        Err(DockerError::Other(
+            String::from_utf8_lossy(&output.stderr).to_string(),
+        ))
+    }
+}
+
+pub async fn compose_down(project_name: &str, config_dir: &str) -> Result<(), DockerError> {
+    let output = tokio::process::Command::new("docker")
+        .arg("compose")
+        .arg("--project-name")
+        .arg(project_name)
+        .arg("down")
+        .current_dir(config_dir)
+        .output()
+        .await
+        .map_err(|e| DockerError::Other(e.to_string()))?;
+
+    if output.status.success() {
+        Ok(())
+    } else {
+        Err(DockerError::Other(
+            String::from_utf8_lossy(&output.stderr).to_string(),
+        ))
+    }
 }
 
 pub fn pull_image(
