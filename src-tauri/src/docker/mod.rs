@@ -1,4 +1,7 @@
-use bollard::container::{ListContainersOptions, LogsOptions, RestartContainerOptions, StartContainerOptions, StopContainerOptions};
+use bollard::container::{
+    ListContainersOptions, LogsOptions, RestartContainerOptions, StartContainerOptions,
+    StopContainerOptions,
+};
 use bollard::models::ContainerSummary;
 use bollard::system::EventsOptions;
 use bollard::Docker;
@@ -85,26 +88,52 @@ fn connect() -> Result<Docker, String> {
 
 fn summary_to_info(c: ContainerSummary) -> ContainerInfo {
     let id = c.id.unwrap_or_default();
-    let name = c.names.and_then(|n| n.into_iter().next()).unwrap_or_default()
-        .trim_start_matches('/').to_string();
+    let name = c
+        .names
+        .and_then(|n| n.into_iter().next())
+        .unwrap_or_default()
+        .trim_start_matches('/')
+        .to_string();
     let image = c.image.unwrap_or_default();
     let status = c.status.unwrap_or_default();
     let state = c.state.unwrap_or_default();
-    let ports = c.ports.unwrap_or_default().iter()
-        .filter_map(|p| p.public_port.map(|pub_p| format!("{}:{}", pub_p, p.private_port)))
+    let ports = c
+        .ports
+        .unwrap_or_default()
+        .iter()
+        .filter_map(|p| {
+            p.public_port
+                .map(|pub_p| format!("{}:{}", pub_p, p.private_port))
+        })
         .collect();
-    ContainerInfo { id, name, image, status, state, ports, created: c.created.unwrap_or(0) }
+    ContainerInfo {
+        id,
+        name,
+        image,
+        status,
+        state,
+        ports,
+        created: c.created.unwrap_or(0),
+    }
 }
 
 async fn fetch_one(docker: &Docker, id: &str) -> Result<ContainerInfo, String> {
     let opts = ListContainersOptions::<String> {
         all: true,
-        filters: { let mut m = HashMap::new(); m.insert("id".to_string(), vec![id.to_string()]); m },
+        filters: {
+            let mut m = HashMap::new();
+            m.insert("id".to_string(), vec![id.to_string()]);
+            m
+        },
         ..Default::default()
     };
-    docker.list_containers(Some(opts)).await
+    docker
+        .list_containers(Some(opts))
+        .await
         .map_err(|e| e.to_string())?
-        .into_iter().next().map(summary_to_info)
+        .into_iter()
+        .next()
+        .map(summary_to_info)
         .ok_or_else(|| "Container not found".to_string())
 }
 
@@ -113,45 +142,89 @@ async fn fetch_one(docker: &Docker, id: &str) -> Result<ContainerInfo, String> {
 #[tauri::command]
 pub async fn list_containers() -> Result<Vec<ContainerInfo>, String> {
     let docker = connect()?;
-    let containers = docker.list_containers(Some(ListContainersOptions::<String> { all: true, ..Default::default() }))
-        .await.map_err(|e| e.to_string())?;
+    let containers = docker
+        .list_containers(Some(ListContainersOptions::<String> {
+            all: true,
+            ..Default::default()
+        }))
+        .await
+        .map_err(|e| e.to_string())?;
     Ok(containers.into_iter().map(summary_to_info).collect())
 }
 
 #[tauri::command]
 pub async fn start_container(id: String) -> Result<ContainerInfo, String> {
     let docker = connect()?;
-    docker.start_container(&id, None::<StartContainerOptions<String>>).await.map_err(|e| e.to_string())?;
+    docker
+        .start_container(&id, None::<StartContainerOptions<String>>)
+        .await
+        .map_err(|e| e.to_string())?;
     fetch_one(&docker, &id).await
 }
 
 #[tauri::command]
 pub async fn stop_container(id: String) -> Result<ContainerInfo, String> {
     let docker = connect()?;
-    docker.stop_container(&id, Some(StopContainerOptions { t: 10 })).await.map_err(|e| e.to_string())?;
+    docker
+        .stop_container(&id, Some(StopContainerOptions { t: 10 }))
+        .await
+        .map_err(|e| e.to_string())?;
     fetch_one(&docker, &id).await
 }
 
 #[tauri::command]
 pub async fn restart_container(id: String) -> Result<ContainerInfo, String> {
     let docker = connect()?;
-    docker.restart_container(&id, Some(RestartContainerOptions { t: 10 })).await.map_err(|e| e.to_string())?;
+    docker
+        .restart_container(&id, Some(RestartContainerOptions { t: 10 }))
+        .await
+        .map_err(|e| e.to_string())?;
     fetch_one(&docker, &id).await
 }
 
 #[tauri::command]
 pub async fn inspect_container(id: String) -> Result<ContainerDetails, String> {
     let docker = connect()?;
-    let info = docker.inspect_container(&id, None).await.map_err(|e| e.to_string())?;
-    let name = info.name.unwrap_or_default().trim_start_matches('/').to_string();
-    let image = info.config.as_ref().and_then(|c| c.image.clone()).unwrap_or_default();
-    let state = info.state.as_ref().and_then(|s| s.status.as_ref()).map(|s| s.to_string()).unwrap_or_default();
+    let info = docker
+        .inspect_container(&id, None)
+        .await
+        .map_err(|e| e.to_string())?;
+    let name = info
+        .name
+        .unwrap_or_default()
+        .trim_start_matches('/')
+        .to_string();
+    let image = info
+        .config
+        .as_ref()
+        .and_then(|c| c.image.clone())
+        .unwrap_or_default();
+    let state = info
+        .state
+        .as_ref()
+        .and_then(|s| s.status.as_ref())
+        .map(|s| s.to_string())
+        .unwrap_or_default();
     let status = state.clone();
-    let env = info.config.as_ref().and_then(|c| c.env.clone()).unwrap_or_default();
-    let cmd = info.config.as_ref().and_then(|c| c.cmd.clone()).unwrap_or_default();
-    let mounts = info.mounts.unwrap_or_default().iter()
-        .filter_map(|m| m.destination.clone()).collect();
-    let ports = info.network_settings.as_ref()
+    let env = info
+        .config
+        .as_ref()
+        .and_then(|c| c.env.clone())
+        .unwrap_or_default();
+    let cmd = info
+        .config
+        .as_ref()
+        .and_then(|c| c.cmd.clone())
+        .unwrap_or_default();
+    let mounts = info
+        .mounts
+        .unwrap_or_default()
+        .iter()
+        .filter_map(|m| m.destination.clone())
+        .collect();
+    let ports = info
+        .network_settings
+        .as_ref()
         .and_then(|n| n.ports.as_ref())
         .map(|p| p.keys().cloned().collect())
         .unwrap_or_default();
@@ -175,11 +248,18 @@ pub async fn get_host_stats(sys_state: State<'_, SysState>) -> Result<HostStats,
         let mut sys = sys_state.0.lock().map_err(|e| e.to_string())?;
         sys.refresh_cpu_usage();
         sys.refresh_memory();
-        (sys.global_cpu_usage() as f64, sys.used_memory() / 1024 / 1024, sys.total_memory() / 1024 / 1024)
+        (
+            sys.global_cpu_usage() as f64,
+            sys.used_memory() / 1024 / 1024,
+            sys.total_memory() / 1024 / 1024,
+        )
     };
     let disks = Disks::new_with_refreshed_list();
     let (disk_used, disk_total) = disks.iter().fold((0u64, 0u64), |(u, t), d| {
-        (u + (d.total_space() - d.available_space()), t + d.total_space())
+        (
+            u + (d.total_space() - d.available_space()),
+            t + d.total_space(),
+        )
     });
     Ok(HostStats {
         cpu_percent,
@@ -193,40 +273,67 @@ pub async fn get_host_stats(sys_state: State<'_, SysState>) -> Result<HostStats,
 #[tauri::command]
 pub async fn get_network_topology() -> Result<Vec<NetworkInfo>, String> {
     let docker = connect()?;
-    let networks = docker.list_networks::<String>(None).await.map_err(|e| e.to_string())?;
-    Ok(networks.into_iter().map(|net| {
-        let ipam = net.ipam.as_ref().and_then(|i| i.config.as_ref()).and_then(|c| c.first());
-        let subnet = ipam.and_then(|c| c.subnet.clone()).unwrap_or_default();
-        let gateway = ipam.and_then(|c| c.gateway.clone()).unwrap_or_default();
-        let containers = net.containers.unwrap_or_default().values().map(|c| NetworkContainer {
-            name: c.name.clone().unwrap_or_default(),
-            ipv4: c.ipv4_address.clone().unwrap_or_default(),
-            mac: c.mac_address.clone().unwrap_or_default(),
-        }).collect();
-        NetworkInfo {
-            id: net.id.unwrap_or_default(),
-            name: net.name.unwrap_or_default(),
-            driver: net.driver.unwrap_or_default(),
-            scope: net.scope.unwrap_or_default(),
-            subnet,
-            gateway,
-            containers,
-        }
-    }).collect())
+    let networks = docker
+        .list_networks::<String>(None)
+        .await
+        .map_err(|e| e.to_string())?;
+    Ok(networks
+        .into_iter()
+        .map(|net| {
+            let ipam = net
+                .ipam
+                .as_ref()
+                .and_then(|i| i.config.as_ref())
+                .and_then(|c| c.first());
+            let subnet = ipam.and_then(|c| c.subnet.clone()).unwrap_or_default();
+            let gateway = ipam.and_then(|c| c.gateway.clone()).unwrap_or_default();
+            let containers = net
+                .containers
+                .unwrap_or_default()
+                .values()
+                .map(|c| NetworkContainer {
+                    name: c.name.clone().unwrap_or_default(),
+                    ipv4: c.ipv4_address.clone().unwrap_or_default(),
+                    mac: c.mac_address.clone().unwrap_or_default(),
+                })
+                .collect();
+            NetworkInfo {
+                id: net.id.unwrap_or_default(),
+                name: net.name.unwrap_or_default(),
+                driver: net.driver.unwrap_or_default(),
+                scope: net.scope.unwrap_or_default(),
+                subnet,
+                gateway,
+                containers,
+            }
+        })
+        .collect())
 }
 
 #[tauri::command]
 pub async fn inspect_network(id: String) -> Result<NetworkInfo, String> {
     let docker = connect()?;
-    let net = docker.inspect_network::<String>(&id, None).await.map_err(|e| e.to_string())?;
-    let ipam = net.ipam.as_ref().and_then(|i| i.config.as_ref()).and_then(|c| c.first());
+    let net = docker
+        .inspect_network::<String>(&id, None)
+        .await
+        .map_err(|e| e.to_string())?;
+    let ipam = net
+        .ipam
+        .as_ref()
+        .and_then(|i| i.config.as_ref())
+        .and_then(|c| c.first());
     let subnet = ipam.and_then(|c| c.subnet.clone()).unwrap_or_default();
     let gateway = ipam.and_then(|c| c.gateway.clone()).unwrap_or_default();
-    let containers = net.containers.unwrap_or_default().values().map(|c| NetworkContainer {
-        name: c.name.clone().unwrap_or_default(),
-        ipv4: c.ipv4_address.clone().unwrap_or_default(),
-        mac: c.mac_address.clone().unwrap_or_default(),
-    }).collect();
+    let containers = net
+        .containers
+        .unwrap_or_default()
+        .values()
+        .map(|c| NetworkContainer {
+            name: c.name.clone().unwrap_or_default(),
+            ipv4: c.ipv4_address.clone().unwrap_or_default(),
+            mac: c.mac_address.clone().unwrap_or_default(),
+        })
+        .collect();
     Ok(NetworkInfo {
         id: net.id.unwrap_or_default(),
         name: net.name.unwrap_or_default(),
@@ -247,9 +354,13 @@ pub async fn stream_logs(
     log_state: State<'_, LogStreamState>,
 ) -> Result<(), String> {
     let docker = connect()?;
-    let tail_str = tail.map(|n| n.to_string()).unwrap_or_else(|| "100".to_string());
+    let tail_str = tail
+        .map(|n| n.to_string())
+        .unwrap_or_else(|| "100".to_string());
     let opts = LogsOptions::<String> {
-        follow: true, stdout: true, stderr: true,
+        follow: true,
+        stdout: true,
+        stderr: true,
         timestamps: true,
         tail: tail_str,
         ..Default::default()
@@ -270,7 +381,9 @@ pub async fn stream_logs(
     });
 
     let mut guard = log_state.0.lock().map_err(|e| e.to_string())?;
-    if let Some(old) = guard.take() { old.abort(); }
+    if let Some(old) = guard.take() {
+        old.abort();
+    }
     *guard = Some(handle);
     Ok(())
 }
@@ -278,7 +391,9 @@ pub async fn stream_logs(
 #[tauri::command]
 pub async fn stop_logs(log_state: State<'_, LogStreamState>) -> Result<(), String> {
     let mut guard = log_state.0.lock().map_err(|e| e.to_string())?;
-    if let Some(handle) = guard.take() { handle.abort(); }
+    if let Some(handle) = guard.take() {
+        handle.abort();
+    }
     Ok(())
 }
 

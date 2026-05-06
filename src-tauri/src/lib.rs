@@ -1,15 +1,14 @@
-mod docker;
 mod db;
+mod docker;
 mod settings;
 
+use db::{delete_env_var, export_env_scope, import_env_file, list_env_vars, upsert_env_var};
 use docker::{
-    list_containers, start_container, stop_container, restart_container,
-    inspect_container, get_host_stats, get_network_topology, inspect_network,
-    stream_logs, stop_logs, stream_docker_events,
-    LogStreamState, SysState,
+    get_host_stats, get_network_topology, inspect_container, inspect_network, list_containers,
+    restart_container, start_container, stop_container, stop_logs, stream_docker_events,
+    stream_logs, LogStreamState, SysState,
 };
-use db::{list_env_vars, upsert_env_var, delete_env_var, import_env_file, export_env_scope};
-use settings::{get_app_info, test_docker_connection, clear_all_env_vars};
+use settings::{clear_all_env_vars, get_app_info, test_docker_connection};
 use std::sync::Mutex;
 use sysinfo::System;
 
