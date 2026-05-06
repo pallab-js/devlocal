@@ -1,5 +1,6 @@
 import { useEffect, useState, useRef, useMemo } from "react";
 import { listen } from "@tauri-apps/api/event";
+import { open } from "@tauri-apps/plugin-dialog";
 import { useQueryClient } from "@tanstack/react-query";
 import { useVirtualizer } from "@tanstack/react-virtual";
 import { useContainers, useContainerMutations, useHostStats, useNetworkTopology } from "../hooks/useQueries";
@@ -106,6 +107,38 @@ export function Dashboard() {
   const { start, stop, restart } = useContainerMutations();
   const { data: stats, isLoading: sLoading } = useHostStats(paused);
   const { data: networks } = useNetworkTopology();
+
+  async function handleComposeUp(projectName: string) {
+    const selected = await open({
+      directory: true,
+      multiple: false,
+      title: `Select directory for ${projectName}`,
+    });
+    if (selected && typeof selected === "string") {
+      try {
+        await ipc.composeUp(projectName, selected);
+        qc.invalidateQueries({ queryKey: ["containers"] });
+      } catch (e) {
+        console.error(e);
+      }
+    }
+  }
+
+  async function handleComposeDown(projectName: string) {
+    const selected = await open({
+      directory: true,
+      multiple: false,
+      title: `Select directory for ${projectName}`,
+    });
+    if (selected && typeof selected === "string") {
+      try {
+        await ipc.composeDown(projectName, selected);
+        qc.invalidateQueries({ queryKey: ["containers"] });
+      } catch (e) {
+        console.error(e);
+      }
+    }
+  }
 
   const filteredContainers = useMemo(() => {
     if (!containers) return [];
@@ -238,6 +271,8 @@ export function Dashboard() {
             onStop={(id) => stop.mutate(id)}
             onRestart={(id) => restart.mutate(id)}
             onDetails={setDetailsId}
+            onComposeUp={handleComposeUp}
+            onComposeDown={handleComposeDown}
           />
         )}
       </section>
@@ -299,12 +334,16 @@ function StatItem({ label, value, pct, max }: { label: string; value: string; pc
   );
 }
 
-function ComposeGroupedView({ containers, onStart, onStop, onRestart, onDetails }: {
+function ComposeGroupedView({ 
+  containers, onStart, onStop, onRestart, onDetails, onComposeUp, onComposeDown 
+}: {
   containers: ContainerInfo[];
   onStart: (id: string) => void;
   onStop: (id: string) => void;
   onRestart: (id: string) => void;
   onDetails: (id: string) => void;
+  onComposeUp: (projectName: string) => void;
+  onComposeDown: (projectName: string) => void;
 }) {
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
   const parentRef = useRef<HTMLDivElement>(null);
@@ -373,14 +412,22 @@ function ComposeGroupedView({ containers, onStart, onStop, onRestart, onDetails 
                 }}
                 className="bg-surface-hi border-b border-border-light flex items-center px-3 z-10"
               >
-                <button
-                  onClick={() => toggleGroup(project)}
-                  className="w-full flex items-center gap-2 bg-transparent border-none cursor-pointer text-left hover:bg-surface-2 transition-colors py-1"
-                >
-                  <span className="text-[10px] text-text-3">{isCollapsed ? "▶" : "▼"}</span>
-                  <span className={`text-[12px] font-semibold font-mono ${project === "__standalone__" ? "text-text-3" : "text-violet"}`}>{label}</span>
-                  <span className="text-[10px] text-text-3 font-mono">({count})</span>
-                </button>
+                <div className="flex-1 flex items-center gap-2">
+                  <button
+                    onClick={() => toggleGroup(project)}
+                    className="flex items-center gap-2 bg-transparent border-none cursor-pointer text-left hover:bg-surface-2 transition-colors py-1"
+                  >
+                    <span className="text-[10px] text-text-3">{isCollapsed ? "▶" : "▼"}</span>
+                    <span className={`text-[12px] font-semibold font-mono ${project === "__standalone__" ? "text-text-3" : "text-violet"}`}>{label}</span>
+                    <span className="text-[10px] text-text-3 font-mono">({count})</span>
+                  </button>
+                </div>
+                {project !== "__standalone__" && (
+                  <div className="flex gap-2">
+                    <button onClick={() => onComposeUp(project)} className={btnGreen}>Start All</button>
+                    <button onClick={() => onComposeDown(project)} className={btnOrange}>Stop All</button>
+                  </div>
+                )}
               </div>
             );
           }

@@ -124,6 +124,10 @@ export const ipc = {
   pullImage: (image: string, tag: string) => invoke<void>("pull_image", { image, tag }),
   deleteImage: (id: string, force?: boolean) => invoke<void>("delete_image", { id, force: force ?? false }),
   pruneImages: () => invoke<number>("prune_images"),
+  composeUp: (projectName: string, configDir: string) =>
+    invoke<void>("compose_up", { projectName, configDir }),
+  composeDown: (projectName: string, configDir: string) =>
+    invoke<void>("compose_down", { projectName, configDir }),
   getSetting: (key: string) => invoke<string | null>("get_setting", { key }),
   setSetting: (key: string, value: string) => invoke<void>("set_setting", { key, value }),
 };
