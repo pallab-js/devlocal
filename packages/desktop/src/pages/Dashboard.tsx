@@ -1,4 +1,4 @@
-import { useEffect, useState, useRef } from "react";
+import { useEffect, useState, useRef, useMemo } from "react";
 import { listen } from "@tauri-apps/api/event";
 import { useQueryClient } from "@tanstack/react-query";
 import { useVirtualizer } from "@tanstack/react-virtual";
@@ -7,6 +7,7 @@ import { ipc, type ContainerInfo, type DockerEvent } from "../lib/ipc";
 import { Skeleton } from "../components/Skeleton";
 import { ContainerDetailsModal } from "../components/ContainerDetailsModal";
 import { Link } from "react-router-dom";
+import { useDebounce } from "../hooks/useDebounce";
 
 const STATE_CONFIG: Record<string, string> = {
   running:    "text-green bg-green/10 border-green/30",
@@ -80,6 +81,8 @@ export function Dashboard() {
   const [detailsId, setDetailsId] = useState<string | null>(null);
   const [events, setEvents] = useState<DockerEvent[]>([]);
   const [groupByCompose, setGroupByCompose] = useState(false);
+  const [search, setSearch] = useState("");
+  const debouncedSearch = useDebounce(search, 300);
   const parentRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -104,8 +107,19 @@ export function Dashboard() {
   const { data: stats, isLoading: sLoading } = useHostStats(paused);
   const { data: networks } = useNetworkTopology();
 
+  const filteredContainers = useMemo(() => {
+    if (!containers) return [];
+    if (!debouncedSearch) return containers;
+    const s = debouncedSearch.toLowerCase();
+    return containers.filter(c => 
+      c.name.toLowerCase().includes(s) || 
+      c.image.toLowerCase().includes(s) ||
+      (c.compose_project && c.compose_project.toLowerCase().includes(s))
+    );
+  }, [containers, debouncedSearch]);
+
   const rowVirtualizer = useVirtualizer({
-    count: containers?.length ?? 0,
+    count: filteredContainers.length,
     getScrollElement: () => parentRef.current,
     estimateSize: () => 49, // Height of ContainerRow with padding
     overscan: 10,
@@ -146,6 +160,12 @@ export function Dashboard() {
               <span className="text-text-2">{totalCount}</span> total
             </span>
           )}
+          <input
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            placeholder="Search containers…"
+            className="text-[11px] px-2.5 py-1 rounded border border-border bg-surface-2 text-text font-mono outline-none mr-2 w-40 focus:border-green focus:ring-1 focus:ring-green/30"
+          />
           <button
             onClick={() => setGroupByCompose((v) => !v)}
             className={`text-[11px] px-2.5 py-1 rounded border font-mono cursor-pointer mr-2 transition-colors ${groupByCompose ? "border-violet bg-violet/10 text-violet" : "border-border bg-surface-2 text-text-3 hover:bg-surface-3"}`}
@@ -164,7 +184,8 @@ export function Dashboard() {
         {cLoading && <div className="flex flex-col gap-2.5">{[0,1,2].map(i => <Skeleton key={i} height={36} />)}</div>}
         {cError && <p className="text-error text-[13px]">Docker unavailable — is the daemon running?</p>}
         {containers && containers.length === 0 && <p className="text-text-3 text-[13px]">No containers found.</p>}
-        {containers && containers.length > 0 && !groupByCompose && (
+        {containers && containers.length > 0 && filteredContainers.length === 0 && <p className="text-text-3 text-[13px]">No containers match your search.</p>}
+        {filteredContainers && filteredContainers.length > 0 && !groupByCompose && (
           <div 
             ref={parentRef}
             className="overflow-y-auto max-h-[600px] border border-border rounded-md"
@@ -186,7 +207,7 @@ export function Dashboard() {
                 }}
               >
                 {rowVirtualizer.getVirtualItems().map((virtualRow) => {
-                  const c = containers[virtualRow.index];
+                  const c = filteredContainers[virtualRow.index];
                   return (
                     <ContainerRow 
                       key={c.id} 
@@ -210,9 +231,9 @@ export function Dashboard() {
             </table>
           </div>
         )}
-        {containers && containers.length > 0 && groupByCompose && (
+        {containers && containers.length > 0 && filteredContainers.length > 0 && groupByCompose && (
           <ComposeGroupedView
-            containers={containers}
+            containers={filteredContainers}
             onStart={(id) => start.mutate(id)}
             onStop={(id) => stop.mutate(id)}
             onRestart={(id) => restart.mutate(id)}
