@@ -1,6 +1,7 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, useRef } from "react";
 import { listen } from "@tauri-apps/api/event";
 import { useQueryClient } from "@tanstack/react-query";
+import { useVirtualizer } from "@tanstack/react-virtual";
 import { useContainers, useContainerMutations, useHostStats, useNetworkTopology } from "../hooks/useQueries";
 import { ipc, type ContainerInfo, type DockerEvent } from "../lib/ipc";
 import { Skeleton } from "../components/Skeleton";
@@ -43,22 +44,23 @@ const btnGreen = `${btnBase} text-green bg-green/10 border-green hover:bg-green/
 const btnOrange = `${btnBase} text-orange bg-orange/10 border-orange hover:bg-orange/20`;
 const btnViolet = `${btnBase} text-violet bg-violet/10 border-violet hover:bg-violet/20`;
 
-function ContainerRow({ c, onStart, onStop, onRestart, onDetails }: {
+function ContainerRow({ c, onStart, onStop, onRestart, onDetails, style }: {
   c: ContainerInfo;
   onStart: () => void; onStop: () => void; onRestart: () => void; onDetails: () => void;
+  style?: React.CSSProperties;
 }) {
   const running = c.state === "running";
   const canRestart = running || c.state === "paused";
   return (
-    <tr className="border-b border-border-light hover:bg-surface-hi/50 transition-colors">
-      <td className="p-3">
-        <button onClick={onDetails} className="bg-transparent border-none text-text font-medium cursor-pointer text-[13px] p-0 text-left hover:text-green transition-colors">
+    <tr className="border-b border-border-light hover:bg-surface-hi/50 transition-colors flex w-full" style={style}>
+      <td className="p-3 flex-1 overflow-hidden text-ellipsis whitespace-nowrap">
+        <button onClick={onDetails} className="bg-transparent border-none text-text font-medium cursor-pointer text-[13px] p-0 text-left hover:text-green transition-colors w-full overflow-hidden text-ellipsis whitespace-nowrap">
           {c.name}
         </button>
       </td>
-      <td className="p-3 text-text-3 font-mono text-[12px]">{c.image}</td>
-      <td className="p-3"><StatusBadge state={c.state} /></td>
-      <td className="p-3">
+      <td className="p-3 flex-1 text-text-3 font-mono text-[12px] overflow-hidden text-ellipsis whitespace-nowrap">{c.image}</td>
+      <td className="p-3 w-32 shrink-0"><StatusBadge state={c.state} /></td>
+      <td className="p-3 w-48 shrink-0">
         <div className="flex gap-1.5">
           {!running && <button onClick={onStart} className={btnGreen}>Start</button>}
           {running && <button onClick={onStop} className={btnOrange}>Stop</button>}
@@ -78,6 +80,7 @@ export function Dashboard() {
   const [detailsId, setDetailsId] = useState<string | null>(null);
   const [events, setEvents] = useState<DockerEvent[]>([]);
   const [groupByCompose, setGroupByCompose] = useState(false);
+  const parentRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     const handler = () => setPaused(document.hidden);
@@ -100,6 +103,13 @@ export function Dashboard() {
   const { start, stop, restart } = useContainerMutations();
   const { data: stats, isLoading: sLoading } = useHostStats(paused);
   const { data: networks } = useNetworkTopology();
+
+  const rowVirtualizer = useVirtualizer({
+    count: containers?.length ?? 0,
+    getScrollElement: () => parentRef.current,
+    estimateSize: () => 49, // Height of ContainerRow with padding
+    overscan: 10,
+  });
 
   const runningCount = containers?.filter(c => c.state === "running").length ?? 0;
   const totalCount = containers?.length ?? 0;
@@ -155,24 +165,47 @@ export function Dashboard() {
         {cError && <p className="text-error text-[13px]">Docker unavailable — is the daemon running?</p>}
         {containers && containers.length === 0 && <p className="text-text-3 text-[13px]">No containers found.</p>}
         {containers && containers.length > 0 && !groupByCompose && (
-          <div className="overflow-x-auto">
-            <table className="w-full border-collapse">
-              <thead>
-                <tr className="border-b border-border">
-                  {["Name", "Image", "Status", "Actions"].map(h => (
-                    <th key={h} className="text-left p-3 pt-1 text-[10px] font-mono uppercase tracking-wider text-text-3">{h}</th>
-                  ))}
+          <div 
+            ref={parentRef}
+            className="overflow-y-auto max-h-[600px] border border-border rounded-md"
+          >
+            <table className="w-full border-collapse table-fixed">
+              <thead className="sticky top-0 z-10 bg-surface">
+                <tr className="border-b border-border flex w-full">
+                  <th className="text-left p-3 pt-1 text-[10px] font-mono uppercase tracking-wider text-text-3 flex-1">Name</th>
+                  <th className="text-left p-3 pt-1 text-[10px] font-mono uppercase tracking-wider text-text-3 flex-1">Image</th>
+                  <th className="text-left p-3 pt-1 text-[10px] font-mono uppercase tracking-wider text-text-3 w-32 shrink-0">Status</th>
+                  <th className="text-left p-3 pt-1 text-[10px] font-mono uppercase tracking-wider text-text-3 w-48 shrink-0">Actions</th>
                 </tr>
               </thead>
-              <tbody>
-                {containers.map(c => (
-                  <ContainerRow key={c.id} c={c}
-                    onStart={() => start.mutate(c.id)}
-                    onStop={() => stop.mutate(c.id)}
-                    onRestart={() => restart.mutate(c.id)}
-                    onDetails={() => setDetailsId(c.id)}
-                  />
-                ))}
+              <tbody 
+                style={{
+                  height: `${rowVirtualizer.getTotalSize()}px`,
+                  width: '100%',
+                  position: 'relative',
+                }}
+              >
+                {rowVirtualizer.getVirtualItems().map((virtualRow) => {
+                  const c = containers[virtualRow.index];
+                  return (
+                    <ContainerRow 
+                      key={c.id} 
+                      c={c}
+                      onStart={() => start.mutate(c.id)}
+                      onStop={() => stop.mutate(c.id)}
+                      onRestart={() => restart.mutate(c.id)}
+                      onDetails={() => setDetailsId(c.id)}
+                      style={{
+                        position: 'absolute',
+                        top: 0,
+                        left: 0,
+                        width: '100%',
+                        height: `${virtualRow.size}px`,
+                        transform: `translateY(${virtualRow.start}px)`,
+                      }}
+                    />
+                  );
+                })}
               </tbody>
             </table>
           </div>
@@ -253,12 +286,27 @@ function ComposeGroupedView({ containers, onStart, onStop, onRestart, onDetails 
   onDetails: (id: string) => void;
 }) {
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
+  const parentRef = useRef<HTMLDivElement>(null);
 
   const groups = containers.reduce<Record<string, ContainerInfo[]>>((acc, c) => {
     const key = c.compose_project ?? "__standalone__";
     (acc[key] ??= []).push(c);
     return acc;
   }, {});
+
+  const flattenedData = Object.entries(groups).flatMap(([project, items]) => {
+    const isCollapsed = collapsed.has(project);
+    const header = { type: 'header' as const, project, count: items.length };
+    if (isCollapsed) return [header];
+    return [header, ...items.map(item => ({ type: 'item' as const, item }))];
+  });
+
+  const rowVirtualizer = useVirtualizer({
+    count: flattenedData.length,
+    getScrollElement: () => parentRef.current,
+    estimateSize: (index) => flattenedData[index].type === 'header' ? 42 : 49,
+    overscan: 10,
+  });
 
   function toggleGroup(key: string) {
     setCollapsed((prev) => {
@@ -273,39 +321,77 @@ function ComposeGroupedView({ containers, onStart, onStop, onRestart, onDetails 
   }
 
   return (
-    <div className="flex flex-col gap-3">
-      {Object.entries(groups).map(([project, items]) => {
-        const isCollapsed = collapsed.has(project);
-        const label = project === "__standalone__" ? "Standalone" : project;
-        return (
-          <div key={project} className="border border-border-light rounded-md overflow-hidden">
-            <button
-              onClick={() => toggleGroup(project)}
-              className="w-full flex items-center gap-2 px-3 py-2 bg-surface-hi border-none cursor-pointer text-left hover:bg-surface-2 transition-colors"
-            >
-              <span className="text-[10px] text-text-3">{isCollapsed ? "▶" : "▼"}</span>
-              <span className={`text-[12px] font-semibold font-mono ${project === "__standalone__" ? "text-text-3" : "text-violet"}`}>{label}</span>
-              <span className="text-[10px] text-text-3 font-mono">({items.length})</span>
-            </button>
-            {!isCollapsed && (
-              <div className="overflow-x-auto">
-                <table className="w-full border-collapse">
-                  <tbody>
-                    {items.map((c) => (
-                      <ContainerRow key={c.id} c={c}
-                        onStart={() => onStart(c.id)}
-                        onStop={() => onStop(c.id)}
-                        onRestart={() => onRestart(c.id)}
-                        onDetails={() => onDetails(c.id)}
-                      />
-                    ))}
-                  </tbody>
-                </table>
+    <div 
+      ref={parentRef}
+      className="overflow-y-auto max-h-[600px] border border-border rounded-md"
+    >
+      <div
+        style={{
+          height: `${rowVirtualizer.getTotalSize()}px`,
+          width: '100%',
+          position: 'relative',
+        }}
+      >
+        {rowVirtualizer.getVirtualItems().map((virtualRow) => {
+          const data = flattenedData[virtualRow.index];
+          
+          if (data.type === 'header') {
+            const { project, count } = data;
+            const isCollapsed = collapsed.has(project);
+            const label = project === "__standalone__" ? "Standalone" : project;
+            return (
+              <div
+                key={`header-${project}`}
+                style={{
+                  position: 'absolute',
+                  top: 0,
+                  left: 0,
+                  width: '100%',
+                  height: `${virtualRow.size}px`,
+                  transform: `translateY(${virtualRow.start}px)`,
+                }}
+                className="bg-surface-hi border-b border-border-light flex items-center px-3 z-10"
+              >
+                <button
+                  onClick={() => toggleGroup(project)}
+                  className="w-full flex items-center gap-2 bg-transparent border-none cursor-pointer text-left hover:bg-surface-2 transition-colors py-1"
+                >
+                  <span className="text-[10px] text-text-3">{isCollapsed ? "▶" : "▼"}</span>
+                  <span className={`text-[12px] font-semibold font-mono ${project === "__standalone__" ? "text-text-3" : "text-violet"}`}>{label}</span>
+                  <span className="text-[10px] text-text-3 font-mono">({count})</span>
+                </button>
               </div>
-            )}
-          </div>
-        );
-      })}
+            );
+          }
+
+          const { item: c } = data;
+          return (
+            <div
+              key={c.id}
+              style={{
+                position: 'absolute',
+                top: 0,
+                left: 0,
+                width: '100%',
+                height: `${virtualRow.size}px`,
+                transform: `translateY(${virtualRow.start}px)`,
+              }}
+            >
+              <table className="w-full border-collapse table-fixed">
+                <tbody>
+                  <ContainerRow 
+                    c={c}
+                    onStart={() => onStart(c.id)}
+                    onStop={() => onStop(c.id)}
+                    onRestart={() => onRestart(c.id)}
+                    onDetails={() => onDetails(c.id)}
+                  />
+                </tbody>
+              </table>
+            </div>
+          );
+        })}
+      </div>
     </div>
   );
 }
