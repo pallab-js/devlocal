@@ -27,7 +27,11 @@ export function Environments() {
   function toggleMask(id: number) {
     setMasked(prev => {
       const next = new Set(prev);
-      next.has(id) ? next.delete(id) : next.add(id);
+      if (next.has(id)) {
+        next.delete(id);
+      } else {
+        next.add(id);
+      }
       return next;
     });
   }
@@ -181,7 +185,7 @@ export function Environments() {
       <form onSubmit={handleSubmit} style={{ background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 8, padding: "1rem 1.25rem", display: "flex", flexDirection: "column", gap: 10 }}>
         <div style={{ display: "flex", gap: 10, alignItems: "flex-end", flexWrap: "wrap" }}>
           <Field label="Key" value={editing ? editing.key : form.key}
-            onChange={(v) => { setFormError(""); editing ? setEditing({ ...editing, key: v }) : setForm({ ...form, key: v }); }}
+            onChange={(v) => { setFormError(""); if (editing) { setEditing({ ...editing, key: v }); } else { setForm({ ...form, key: v }); } }}
             placeholder="API_KEY" disabled={!!editing} />
           <Field label="Value" value={editing ? editing.value : form.value}
             onChange={(v) => editing ? setEditing({ ...editing, value: v }) : setForm({ ...form, value: v })}
