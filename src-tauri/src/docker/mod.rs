@@ -538,9 +538,9 @@ pub async fn get_container_stats(
         .memory_stats
         .stats
         .as_ref()
-        .and_then(|s| match s {
-            bollard::container::MemoryStatsStats::V1(v1) => Some(v1.cache),
-            bollard::container::MemoryStatsStats::V2(v2) => Some(v2.file),
+        .map(|s| match s {
+            bollard::container::MemoryStatsStats::V1(v1) => v1.cache,
+            bollard::container::MemoryStatsStats::V2(v2) => v2.file,
         })
         .unwrap_or(0);
     let mem_used_mb = mem_usage.saturating_sub(mem_cache) / 1024 / 1024;
