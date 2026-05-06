@@ -1,0 +1,78 @@
+@import url("https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700&family=Space+Grotesk:wght@400;500&display=swap");
+@import "tailwindcss";
+
+@theme {
+  --color-bg: #171717;
+  --color-bg-deep: #0f0f0f;
+  --color-surface: #131313;
+  --color-surface-hi: #1c1c1c;
+  --color-surface-2: #202020;
+  --color-surface-3: #2a2a2a;
+  --color-border: #2e2e2e;
+  --color-border-hi: #363636;
+  --color-border-light: #242424;
+  --color-green: #3ecf8e;
+  --color-green-dim: rgba(62, 207, 142, 0.15);
+  --color-green-border: rgba(62, 207, 142, 0.3);
+  --color-text: #fafafa;
+  --color-text-2: #b4b4b4;
+  --color-text-3: #898989;
+  --color-orange: #ffa072;
+  --color-orange-dim: rgba(255, 160, 114, 0.12);
+  --color-violet: hsl(251, 63.2%, 63.2%);
+  --color-violet-dim: rgba(130, 110, 220, 0.12);
+  --color-error: #ffb4ab;
+  --color-error-dim: rgba(255, 180, 171, 0.1);
+
+  --font-sans: "Plus Jakarta Sans", sans-serif;
+  --font-mono: "Space Grotesk", monospace;
+}
+
+:root {
+  --bg: #171717;
+  --bg-deep: #0f0f0f;
+  --surface: #131313;
+  --surface-hi: #1c1c1c;
+  --surface-2: #202020;
+  --surface-3: #2a2a2a;
+  --border: #2e2e2e;
+  --border-hi: #363636;
+  --border-light: #242424;
+  --green: #3ecf8e;
+  --green-dim: rgba(62, 207, 142, 0.15);
+  --green-border: rgba(62, 207, 142, 0.3);
+  --text: #fafafa;
+  --text-2: #b4b4b4;
+  --text-3: #898989;
+  --orange: #ffa072;
+  --orange-dim: rgba(255, 160, 114, 0.12);
+  --violet: hsl(251, 63.2%, 63.2%);
+  --violet-dim: rgba(130, 110, 220, 0.12);
+  --error: #ffb4ab;
+  --error-dim: rgba(255, 180, 171, 0.1);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--font-sans);
+  font-size: 14px;
+  line-height: 1.6;
+  margin: 0;
+}
+
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: var(--bg-deep);
+}
+::-webkit-scrollbar-thumb {
+  background: var(--border-hi);
+  border-radius: 3px;
+}
