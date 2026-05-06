@@ -1,4 +1,4 @@
-use crate::{pool, validate_scope, EnvVar, import_env_file_inner, KEYRING_SERVICE, is_sensitive};
+use crate::{import_env_file_inner, is_sensitive, pool, validate_scope, EnvVar, KEYRING_SERVICE};
 
 #[tauri::command]
 pub async fn list_env_vars(scope: Option<String>) -> Result<Vec<EnvVar>, String> {
@@ -157,7 +157,7 @@ pub async fn import_secrets(content: String, format: String, scope: String) -> R
             Ok(count)
         }
         "docker" => {
-            // Docker secrets can be env files or single value files. 
+            // Docker secrets can be env files or single value files.
             // We reuse env file parser for multi-line support.
             import_env_file_inner(pool, &content, &scope).await
         }

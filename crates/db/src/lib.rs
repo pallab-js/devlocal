@@ -155,7 +155,7 @@ async fn auto_backup(db_path: &std::path::Path) -> Result<(), String> {
         .map_err(|e| e.to_string())?
         .filter_map(|res| res.ok())
         .map(|e| e.path())
-        .filter(|p| p.is_file() && p.extension().map_or(false, |ext| ext == "db"))
+        .filter(|p| p.is_file() && p.extension().is_some_and(|ext| ext == "db"))
         .collect::<Vec<_>>();
 
     entries.sort();
@@ -413,5 +413,22 @@ mod tests {
         assert!(validate_scope("invalid").is_err());
         assert!(validate_scope("../../etc").is_err());
         assert!(validate_scope("").is_err());
+    }
+
+    use proptest::prelude::*;
+
+    proptest! {
+        #[test]
+        fn test_env_var_serialization_roundtrip(
+            id in any::<i64>(),
+            key in "[a-zA-Z0-9_]{1,64}",
+            value in ".*",
+            scope in "(global|development|staging|production)"
+        ) {
+            let original = EnvVar { id, key, value, scope };
+            let serialized = serde_json::to_string(&original).unwrap();
+            let deserialized: EnvVar = serde_json::from_str(&serialized).unwrap();
+            assert_eq!(original, deserialized);
+        }
     }
 }
