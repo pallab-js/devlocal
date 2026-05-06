@@ -3,8 +3,8 @@ use bollard::container::LogsOptions;
 use bollard::system::EventsOptions;
 use bollard::Docker;
 use docker_ops::{
-    self, ContainerDetails, ContainerInfo, ContainerStats, DockerEvent, HostStats, NetworkInfo,
-    VolumeInfo,
+    self, ContainerDetails, ContainerInfo, ContainerStats, DockerEvent, HostStats, ImageInfo,
+    NetworkInfo, VolumeInfo,
 };
 use futures_util::StreamExt;
 use std::sync::{Arc, Mutex};
@@ -207,6 +207,47 @@ pub async fn list_volumes(docker: State<'_, DockerState>) -> Result<Vec<VolumeIn
 pub async fn prune_volumes(docker: State<'_, DockerState>) -> Result<u64> {
     let docker = docker.0.as_ref().ok_or_else(|| crate::error::AppError::Generic("Docker not connected".to_string()))?;
     Ok(docker_ops::prune_volumes(docker).await?)
+}
+
+#[tauri::command]
+pub async fn list_images(docker: State<'_, DockerState>) -> Result<Vec<ImageInfo>> {
+    let docker = docker.0.as_ref().ok_or_else(|| crate::error::AppError::Generic("Docker not connected".to_string()))?;
+    Ok(docker_ops::list_images(docker).await?)
+}
+
+#[tauri::command]
+pub async fn remove_image(id: String, docker: State<'_, DockerState>) -> Result<()> {
+    let docker = docker.0.as_ref().ok_or_else(|| crate::error::AppError::Generic("Docker not connected".to_string()))?;
+    Ok(docker_ops::remove_image(docker, &id).await?)
+}
+
+#[tauri::command]
+pub async fn pull_image(
+    image: String,
+    tag: String,
+    app: AppHandle,
+    docker: State<'_, DockerState>,
+) -> Result<()> {
+    let docker = docker.0.as_ref().ok_or_else(|| crate::error::AppError::Generic("Docker not connected".to_string()))?;
+    let docker_clone = Arc::clone(docker);
+
+    tokio::spawn(async move {
+        let mut stream = docker_ops::pull_image(&docker_clone, image, tag);
+        while let Some(res) = stream.next().await {
+            match res {
+                Ok(progress) => {
+                    let _ = app.emit("pull-progress", progress);
+                }
+                Err(e) => {
+                    let _ = app.emit("pull-error", e.to_string());
+                    break;
+                }
+            }
+        }
+        let _ = app.emit("pull-finished", ());
+    });
+
+    Ok(())
 }
 
 pub fn start_health_monitor(app: AppHandle, docker: Arc<Docker>) {

@@ -92,6 +92,9 @@ pub fn run(context: tauri::Context) {
             docker::stop_docker_events,
             docker::list_volumes,
             docker::prune_volumes,
+            docker::list_images,
+            docker::remove_image,
+            docker::pull_image,
             db::list_env_vars,
             db::upsert_env_var,
             db::delete_env_var,
@@ -113,8 +116,8 @@ mod tests {
     use crate::settings::AppInfo;
     use db::EnvVar;
     use docker_ops::{
-        ContainerDetails, ContainerInfo, ContainerStats, DockerEvent, HostStats, NetworkContainer,
-        NetworkInfo, VolumeInfo,
+        ContainerDetails, ContainerInfo, ContainerStats, DockerEvent, HostStats, ImageInfo,
+        NetworkContainer, NetworkInfo, PullProgress, VolumeInfo,
     };
     use ts_rs::TS;
 
@@ -133,5 +136,7 @@ mod tests {
         let _ = <DockerEvent as TS>::decl();
         let _ = <ContainerStats as TS>::decl();
         let _ = <VolumeInfo as TS>::decl();
+        let _ = <ImageInfo as TS>::decl();
+        let _ = <PullProgress as TS>::decl();
     }
 }

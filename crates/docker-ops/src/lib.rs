@@ -2,6 +2,7 @@ use bollard::container::{
     ListContainersOptions, RestartContainerOptions, StartContainerOptions, StatsOptions,
     StopContainerOptions,
 };
+use bollard::image::{CreateImageOptions, ListImagesOptions, RemoveImageOptions};
 use bollard::models::ContainerSummary;
 use bollard::Docker;
 use futures_util::StreamExt;
@@ -98,6 +99,25 @@ pub struct VolumeInfo {
     pub mountpoint: String,
     pub scope: String,
     pub created: String,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone, TS)]
+#[ts(export, export_to = "../../packages/shared/types/")]
+pub struct ImageInfo {
+    pub id: String,
+    pub repo_tags: Vec<String>,
+    pub size: i64,
+    pub created: i64,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone, TS)]
+#[ts(export, export_to = "../../packages/shared/types/")]
+pub struct PullProgress {
+    pub id: Option<String>,
+    pub status: Option<String>,
+    pub progress: Option<String>,
+    pub current: Option<i64>,
+    pub total: Option<i64>,
 }
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
@@ -409,4 +429,56 @@ pub async fn list_volumes(docker: &Docker) -> Result<Vec<VolumeInfo>, DockerErro
 pub async fn prune_volumes(docker: &Docker) -> Result<u64, DockerError> {
     let result = docker.prune_volumes::<String>(None).await?;
     Ok(result.space_reclaimed.unwrap_or(0) as u64)
+}
+
+pub async fn list_images(docker: &Docker) -> Result<Vec<ImageInfo>, DockerError> {
+    let images = docker
+        .list_images(Some(ListImagesOptions::<String> {
+            all: true,
+            ..Default::default()
+        }))
+        .await?;
+    Ok(images
+        .into_iter()
+        .map(|img| ImageInfo {
+            id: img.id,
+            repo_tags: img.repo_tags,
+            size: img.size,
+            created: img.created,
+        })
+        .collect())
+}
+
+pub async fn remove_image(docker: &Docker, id: &str) -> Result<(), DockerError> {
+    docker
+        .remove_image(id, None::<RemoveImageOptions>, None)
+        .await?;
+    Ok(())
+}
+
+pub fn pull_image(
+    docker: &Docker,
+    from_image: String,
+    tag: String,
+) -> impl futures_util::Stream<Item = Result<PullProgress, DockerError>> + '_ {
+    docker
+        .create_image(
+            Some(CreateImageOptions {
+                from_image,
+                tag,
+                ..Default::default()
+            }),
+            None,
+            None,
+        )
+        .map(|res| {
+            res.map(|info| PullProgress {
+                id: info.id,
+                status: info.status,
+                progress: info.progress,
+                current: info.progress_detail.as_ref().and_then(|d| d.current),
+                total: info.progress_detail.as_ref().and_then(|d| d.total),
+            })
+            .map_err(DockerError::Bollard)
+        })
 }
