@@ -8,6 +8,19 @@ const mockInvoke = vi.hoisted(() => vi.fn());
 vi.mock("@tauri-apps/api/core", () => ({ invoke: mockInvoke }));
 vi.mock("@tauri-apps/api/event", () => ({ listen: vi.fn().mockResolvedValue(() => {}) }));
 
+vi.mock("@tanstack/react-virtual", () => ({
+  useVirtualizer: vi.fn().mockImplementation(({ count, estimateSize }) => ({
+    getVirtualItems: () => Array.from({ length: count }, (_, index) => ({
+      index,
+      start: index * estimateSize(index),
+      size: estimateSize(index),
+      key: index,
+    })),
+    getTotalSize: () => count * estimateSize(0),
+    scrollToIndex: vi.fn(),
+  })),
+}));
+
 const containers = [
   { id: "abc", name: "nginx", image: "nginx:latest", status: "Up", state: "running", ports: [], created: 0 },
   { id: "def", name: "redis", image: "redis:7", status: "Exited", state: "exited", ports: [], created: 0 },
