@@ -6,7 +6,7 @@ use tauri::Manager;
 #[derive(Debug, Serialize)]
 pub struct DbPoolStats {
     pub size: u32,
-    pub idle: u32,
+    pub idle: usize,
 }
 
 static POOL: OnceLock<SqlitePool> = OnceLock::new();
@@ -300,7 +300,7 @@ pub async fn get_db_pool_stats() -> Result<DbPoolStats, String> {
     let pool = pool()?;
     Ok(DbPoolStats {
         size: pool.size(),
-        idle: pool.num_idle() as u32,
+        idle: pool.num_idle(),
     })
 }
 

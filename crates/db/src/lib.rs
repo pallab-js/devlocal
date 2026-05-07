@@ -101,15 +101,15 @@ pub struct EnvVar {
 #[derive(Debug, Serialize, Deserialize, TS)]
 #[ts(export, export_to = "../../packages/shared/types/")]
 pub struct DbPoolStats {
-    pub size: usize,
+    pub size: u32,
     pub idle: usize,
 }
 
 pub fn get_pool_stats() -> Result<DbPoolStats, String> {
     let pool = pool()?;
     Ok(DbPoolStats {
-        size: pool.size() as usize,
-        idle: pool.num_idle() as usize,
+        size: pool.size(),
+        idle: pool.num_idle(),
     })
 }
 
