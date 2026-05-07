@@ -52,11 +52,8 @@ async fn test_list_containers_mocked() {
 
     // Instantiate Bollard client pointing to the mock server
     // Note: bollard::Docker::connect_with_http is useful for this
-    let docker = Docker::connect_with_http(
-        &mock_server.uri(),
-        120,
-        bollard::API_DEFAULT_VERSION,
-    ).unwrap();
+    let docker =
+        Docker::connect_with_http(&mock_server.uri(), 120, bollard::API_DEFAULT_VERSION).unwrap();
 
     // Call the function under test
     let result = list_containers(&docker).await.unwrap();
