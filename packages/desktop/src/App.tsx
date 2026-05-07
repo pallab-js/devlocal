@@ -11,6 +11,7 @@ import { Logs } from "./pages/Logs";
 import { Network } from "./pages/Network";
 import { Volumes } from "./pages/Volumes";
 import { Settings } from "./pages/Settings";
+import { ipc } from "./lib/ipc";
 
 function DockerStatusBanner({ online }: { online: boolean }) {
   if (online) return null;
@@ -126,6 +127,15 @@ export default function App() {
     return () => {
       unlisten.then((f) => f());
     };
+  }, []);
+
+  useEffect(() => {
+    Promise.all([ipc.getSetting("poll_containers"), ipc.getSetting("poll_stats")]).then(
+      ([c, s]) => {
+        if (c) localStorage.setItem("poll_containers", c);
+        if (s) localStorage.setItem("poll_stats", s);
+      },
+    ).catch(() => {});
   }, []);
 
   return (

@@ -4,7 +4,10 @@
   "version": "0.1.0",
   "type": "module",
   "scripts": {
-    "lint": "tsc --noEmit && eslint .",
-    "format": "prettier --write \"src/**/*.{ts,tsx,css}\""
+    "dev":    "pnpm tauri dev",
+    "build":  "pnpm tauri build",
+    "test":   "pnpm --filter @devopslocal/desktop test",
+    "lint":   "pnpm --filter @devopslocal/desktop lint",
+    "format": "pnpm --filter @devopslocal/desktop format"
   }
 }

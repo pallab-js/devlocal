@@ -1,100 +1,12 @@
 import { invoke } from "@tauri-apps/api/core";
+export type {
+  AppError, AppInfo, ContainerInfo, ContainerDetails, ContainerStats, DockerEvent,
+  EnvVar, HostStats, ImageInfo, LogLine, NetworkContainer, NetworkInfo,
+  PullProgress, VolumeInfo,
+} from "@devopslocal/shared";
 
-export interface ContainerInfo {
-  id: string;
-  name: string;
-  image: string;
-  status: string;
-  state: "running" | "exited" | "paused" | "restarting" | string;
-  ports: string[];
-  created: number;
-  compose_project?: string;
-}
-
-export interface ContainerDetails extends ContainerInfo {
-  env: string[];
-  mounts: string[];
-  cmd: string[];
-}
-
-export interface HostStats {
-  cpu_percent: number;
-  mem_used_mb: number;
-  mem_total_mb: number;
-  disk_used_gb: number;
-  disk_total_gb: number;
-}
-
-export interface ContainerStats {
-  cpu_percent: number;
-  mem_used_mb: number;
-  mem_limit_mb: number;
-}
-
-export interface EnvVar {
-  id: number;
-  key: string;
-  value: string;
-  scope: string;
-}
-
-export interface NetworkContainer {
-  name: string;
-  ipv4: string;
-  mac: string;
-}
-
-export interface NetworkInfo {
-  id: string;
-  name: string;
-  driver: string;
-  scope: string;
-  subnet: string;
-  gateway: string;
-  containers: NetworkContainer[];
-}
-
-export interface DockerEvent {
-  kind: string;
-  action: string;
-  actor: string;
-  time: number;
-}
-
-export interface AppInfo {
-  version: string;
-  db_path: string;
-}
-
-export interface VolumeInfo {
-  name: string;
-  driver: string;
-  mountpoint: string;
-  scope: string;
-  created: string;
-}
-
-export interface ImageInfo {
-  id: string;
-  repo_tags: string[];
-  created: number;
-  size: number;
-  virtual_size: number;
-  containers: number;
-}
-
-export interface PullProgress {
-  id?: string;
-  status?: string;
-  progress?: string;
-  current?: number;
-  total?: number;
-}
-
-export interface LogLine {
-  container_id: string;
-  ts: string;
-  text: string;
+export function isAppError(e: unknown): e is AppError {
+  return typeof e === "object" && e !== null && "code" in e && "message" in e;
 }
 
 export const ipc = {

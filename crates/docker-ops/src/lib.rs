@@ -25,6 +25,7 @@ pub struct ContainerInfo {
     pub status: String,
     pub state: String,
     pub ports: Vec<String>,
+    #[ts(type = "number")]
     pub created: i64,
     pub compose_project: Option<String>,
 }
@@ -38,6 +39,7 @@ pub struct ContainerDetails {
     pub status: String,
     pub state: String,
     pub ports: Vec<String>,
+    #[ts(type = "number")]
     pub created: i64,
     pub env: Vec<String>,
     pub mounts: Vec<String>,
@@ -48,10 +50,63 @@ pub struct ContainerDetails {
 #[ts(export, export_to = "../../packages/shared/types/")]
 pub struct HostStats {
     pub cpu_percent: f64,
+    #[ts(type = "number")]
     pub mem_used_mb: u64,
+    #[ts(type = "number")]
     pub mem_total_mb: u64,
     pub disk_used_gb: f64,
     pub disk_total_gb: f64,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone, TS)]
+#[ts(export, export_to = "../../packages/shared/types/")]
+pub struct DockerEvent {
+    pub kind: String,
+    pub action: String,
+    pub actor: String,
+    #[ts(type = "number")]
+    pub time: i64,
+}
+
+#[derive(Debug, Serialize, Deserialize, TS)]
+#[ts(export, export_to = "../../packages/shared/types/")]
+pub struct ContainerStats {
+    pub cpu_percent: f64,
+    #[ts(type = "number")]
+    pub mem_used_mb: u64,
+    #[ts(type = "number")]
+    pub mem_limit_mb: u64,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone, TS)]
+#[ts(export, export_to = "../../packages/shared/types/")]
+pub struct ImageInfo {
+    pub id: String,
+    pub repo_tags: Vec<String>,
+    #[ts(type = "number")]
+    pub size: i64,
+    #[ts(type = "number")]
+    pub created: i64,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone, TS)]
+#[ts(export, export_to = "../../packages/shared/types/")]
+pub struct PullProgress {
+    pub id: Option<String>,
+    pub status: Option<String>,
+    pub progress: Option<String>,
+    #[ts(type = "number")]
+    pub current: Option<i64>,
+    #[ts(type = "number")]
+    pub total: Option<i64>,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone, TS)]
+#[ts(export, export_to = "../../packages/shared/types/")]
+pub struct LogLine {
+    pub container_id: String,
+    pub ts: String,
+    pub text: String,
 }
 
 #[derive(Debug, Serialize, Deserialize, TS)]
@@ -74,23 +129,6 @@ pub struct NetworkInfo {
     pub containers: Vec<NetworkContainer>,
 }
 
-#[derive(Debug, Serialize, Deserialize, Clone, TS)]
-#[ts(export, export_to = "../../packages/shared/types/")]
-pub struct DockerEvent {
-    pub kind: String,
-    pub action: String,
-    pub actor: String,
-    pub time: i64,
-}
-
-#[derive(Debug, Serialize, Deserialize, TS)]
-#[ts(export, export_to = "../../packages/shared/types/")]
-pub struct ContainerStats {
-    pub cpu_percent: f64,
-    pub mem_used_mb: u64,
-    pub mem_limit_mb: u64,
-}
-
 #[derive(Debug, Serialize, Deserialize, TS)]
 #[ts(export, export_to = "../../packages/shared/types/")]
 pub struct VolumeInfo {
@@ -101,34 +139,19 @@ pub struct VolumeInfo {
     pub created: String,
 }
 
-#[derive(Debug, Serialize, Deserialize, Clone, TS)]
-#[ts(export, export_to = "../../packages/shared/types/")]
-pub struct ImageInfo {
-    pub id: String,
-    pub repo_tags: Vec<String>,
-    pub size: i64,
-    pub created: i64,
-}
-
-#[derive(Debug, Serialize, Deserialize, Clone, TS)]
-#[ts(export, export_to = "../../packages/shared/types/")]
-pub struct PullProgress {
-    pub id: Option<String>,
-    pub status: Option<String>,
-    pub progress: Option<String>,
-    pub current: Option<i64>,
-    pub total: Option<i64>,
-}
-
-#[derive(Debug, Serialize, Deserialize, Clone, TS)]
-#[ts(export, export_to = "../../packages/shared/types/")]
-pub struct LogLine {
-    pub container_id: String,
-    pub ts: String,
-    pub text: String,
-}
-
 // ── Helpers ──────────────────────────────────────────────────────────────────
+
+fn map_network_containers(
+    raw: std::collections::HashMap<String, bollard::models::NetworkContainer>,
+) -> Vec<NetworkContainer> {
+    raw.values()
+        .map(|c| NetworkContainer {
+            name: c.name.clone().unwrap_or_default(),
+            ipv4: c.ipv4_address.clone().unwrap_or_default(),
+            mac: c.mac_address.clone().unwrap_or_default(),
+        })
+        .collect()
+}
 
 pub fn summary_to_info(c: ContainerSummary) -> ContainerInfo {
     let id = c.id.unwrap_or_default();
@@ -318,6 +341,28 @@ pub fn get_host_stats(sys: &mut System) -> HostStats {
     }
 }
 
+pub fn get_host_stats_with_disks(sys: &mut System, disks: &Disks) -> HostStats {
+    sys.refresh_cpu_usage();
+    sys.refresh_memory();
+    let cpu_percent = sys.global_cpu_usage() as f64;
+    let mem_used_mb = sys.used_memory() / 1024 / 1024;
+    let mem_total_mb = sys.total_memory() / 1024 / 1024;
+
+    let (disk_used, disk_total) = disks.iter().fold((0u64, 0u64), |(u, t), d| {
+        (
+            u + (d.total_space() - d.available_space()),
+            t + d.total_space(),
+        )
+    });
+    HostStats {
+        cpu_percent,
+        mem_used_mb,
+        mem_total_mb,
+        disk_used_gb: disk_used as f64 / 1_073_741_824.0,
+        disk_total_gb: disk_total as f64 / 1_073_741_824.0,
+    }
+}
+
 pub async fn get_network_topology(docker: &Docker) -> Result<Vec<NetworkInfo>, DockerError> {
     let networks = docker.list_networks::<String>(None).await?;
     Ok(networks
@@ -330,16 +375,7 @@ pub async fn get_network_topology(docker: &Docker) -> Result<Vec<NetworkInfo>, D
                 .and_then(|c| c.first());
             let subnet = ipam.and_then(|c| c.subnet.clone()).unwrap_or_default();
             let gateway = ipam.and_then(|c| c.gateway.clone()).unwrap_or_default();
-            let containers = net
-                .containers
-                .unwrap_or_default()
-                .values()
-                .map(|c| NetworkContainer {
-                    name: c.name.clone().unwrap_or_default(),
-                    ipv4: c.ipv4_address.clone().unwrap_or_default(),
-                    mac: c.mac_address.clone().unwrap_or_default(),
-                })
-                .collect();
+            let containers = map_network_containers(net.containers.unwrap_or_default());
             NetworkInfo {
                 id: net.id.unwrap_or_default(),
                 name: net.name.unwrap_or_default(),
@@ -362,16 +398,7 @@ pub async fn inspect_network(docker: &Docker, id: &str) -> Result<NetworkInfo, D
         .and_then(|c| c.first());
     let subnet = ipam.and_then(|c| c.subnet.clone()).unwrap_or_default();
     let gateway = ipam.and_then(|c| c.gateway.clone()).unwrap_or_default();
-    let containers = net
-        .containers
-        .unwrap_or_default()
-        .values()
-        .map(|c| NetworkContainer {
-            name: c.name.clone().unwrap_or_default(),
-            ipv4: c.ipv4_address.clone().unwrap_or_default(),
-            mac: c.mac_address.clone().unwrap_or_default(),
-        })
-        .collect();
+    let containers = map_network_containers(net.containers.unwrap_or_default());
     Ok(NetworkInfo {
         id: net.id.unwrap_or_default(),
         name: net.name.unwrap_or_default(),

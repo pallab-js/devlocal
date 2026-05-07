@@ -3,9 +3,10 @@ pub mod docker;
 pub mod error;
 pub mod settings;
 
-use crate::docker::{DockerState, EventStreamState, LogStreamState, SysState};
+use crate::docker::{DiskState, DockerState, EventStreamState, LogStreamState, SysState};
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
+use std::time::Instant;
 use sysinfo::System;
 use tauri::Manager;
 
@@ -39,6 +40,10 @@ pub fn run(context: tauri::Context) {
         .manage(LogStreamState(Mutex::new(HashMap::new())))
         .manage(EventStreamState(Mutex::new(None)))
         .manage(SysState(Mutex::new(System::new())))
+        .manage(DiskState(Mutex::new((
+            sysinfo::Disks::new_with_refreshed_list(),
+            Instant::now(),
+        ))))
         .setup(|app| {
             let handle = app.handle().clone();
             tauri::async_runtime::spawn(async move {

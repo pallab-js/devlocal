@@ -159,12 +159,22 @@ pub async fn import_secrets(content: String, format: String, scope: String) -> R
                 let value = String::from_utf8(decoded_bytes)
                     .map_err(|e| format!("Value for key {} is not valid UTF-8: {}", key, e))?;
 
+                let stored_value = if is_sensitive(&key) {
+                    let keyring_key = format!("{scope}:{key}");
+                    let entry = keyring::Entry::new(KEYRING_SERVICE, &keyring_key)
+                        .map_err(|e| e.to_string())?;
+                    entry.set_password(&value).map_err(|e| e.to_string())?;
+                    "__keychain__".to_string()
+                } else {
+                    value
+                };
+
                 sqlx::query(
                     "INSERT INTO env_vars (key, value, scope) VALUES (?, ?, ?)
                      ON CONFLICT(key, scope) DO UPDATE SET value = excluded.value",
                 )
                 .bind(&key)
-                .bind(&value)
+                .bind(&stored_value)
                 .bind(&scope)
                 .execute(&mut *tx)
                 .await

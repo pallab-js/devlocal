@@ -92,6 +92,7 @@ pub fn validate_key(key: &str) -> Result<(), String> {
 #[derive(Debug, Serialize, Deserialize, sqlx::FromRow, PartialEq, TS)]
 #[ts(export, export_to = "../../packages/shared/types/")]
 pub struct EnvVar {
+    #[ts(type = "number")]
     pub id: i64,
     pub key: String,
     pub value: String,

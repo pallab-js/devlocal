@@ -105,10 +105,17 @@ export function Settings() {
     }
   }
 
-  function saveIntervals() {
+  async function saveIntervals() {
     localStorage.setItem("poll_containers", String(containerInterval));
     localStorage.setItem("poll_stats", String(statsInterval));
-    // Remove queries so they are recreated with the new interval on next render
+    try {
+      await Promise.all([
+        ipc.setSetting("poll_containers", String(containerInterval)),
+        ipc.setSetting("poll_stats", String(statsInterval)),
+      ]);
+    } catch (e) {
+      console.error("Failed to persist poll intervals to DB:", e);
+    }
     qc.removeQueries({ queryKey: ["containers"] });
     qc.removeQueries({ queryKey: ["host-stats"] });
   }

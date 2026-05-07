@@ -9,7 +9,8 @@ use docker_ops::{
 use futures_util::StreamExt;
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
-use sysinfo::System;
+use std::time::Instant;
+use sysinfo::{Disks, System};
 use tauri::{AppHandle, Emitter, State};
 use tokio::task::JoinHandle;
 
@@ -18,6 +19,7 @@ use tokio::task::JoinHandle;
 pub struct LogStreamState(pub Mutex<HashMap<String, JoinHandle<()>>>);
 pub struct EventStreamState(pub Mutex<Option<JoinHandle<()>>>);
 pub struct SysState(pub Mutex<System>);
+pub struct DiskState(pub Mutex<(Disks, Instant)>);
 pub struct DockerState(pub Option<Arc<Docker>>);
 
 // ── Commands ─────────────────────────────────────────────────────────────────
