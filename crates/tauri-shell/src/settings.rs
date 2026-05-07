@@ -5,7 +5,7 @@ use tauri::Manager;
 use ts_rs::TS;
 
 #[derive(Serialize, TS)]
-#[ts(export, export_to = "../../packages/shared/types/")]
+#[ts(export, export_to = "../../../packages/shared/types/")]
 pub struct AppInfo {
     pub version: String,
     pub db_path: String,

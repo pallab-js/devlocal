@@ -2,7 +2,7 @@ use bollard::container::{
     ListContainersOptions, RestartContainerOptions, StartContainerOptions, StatsOptions,
     StopContainerOptions, UpdateContainerOptions,
 };
-use bollard::image::{CreateImageOptions, ListImagesOptions, RemoveImageOptions};
+use bollard::image::{CreateImageOptions, ListImagesOptions, PruneImagesOptions, RemoveImageOptions};
 use bollard::models::ContainerSummary;
 use bollard::Docker;
 use futures_util::StreamExt;
@@ -503,11 +503,21 @@ pub async fn list_images(docker: &Docker) -> Result<Vec<ImageInfo>, DockerError>
         .collect())
 }
 
-pub async fn remove_image(docker: &Docker, id: &str) -> Result<(), DockerError> {
+pub async fn remove_image(docker: &Docker, id: &str, force: bool) -> Result<(), DockerError> {
     docker
-        .remove_image(id, None::<RemoveImageOptions>, None)
+        .remove_image(id, Some(RemoveImageOptions { force, noprune: false }), None)
         .await?;
     Ok(())
+}
+
+pub async fn prune_images(docker: &Docker) -> Result<u64, DockerError> {
+    let result = docker.prune_images(None::<PruneImagesOptions<String>>).await?;
+    Ok(result.space_reclaimed.unwrap_or(0) as u64)
+}
+
+pub async fn inspect_volume(docker: &Docker, name: &str) -> Result<serde_json::Value, DockerError> {
+    let vol = docker.inspect_volume(name).await?;
+    Ok(serde_json::to_value(vol).map_err(|e| DockerError::Other(e.to_string()))?)
 }
 
 pub async fn compose_up(project_name: &str, config_dir: &str) -> Result<(), DockerError> {

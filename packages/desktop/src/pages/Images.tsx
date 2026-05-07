@@ -25,14 +25,14 @@ function ImageRow({ img, onRemove, style }: {
 }) {
   const shortId = img.id.replace("sha256:", "").substring(0, 12);
   const tags = img.repo_tags && img.repo_tags.length > 0 ? img.repo_tags.join(", ") : "<none>";
-  const date = new Date(img.created * 1000).toLocaleDateString();
+  const date = new Date(Number(img.created) * 1000).toLocaleDateString();
 
   return (
     <tr className="border-b border-border-light hover:bg-surface-hi/50 transition-colors flex w-full" style={style}>
       <td className="p-3 w-32 shrink-0 font-mono text-[12px] text-violet">{shortId}</td>
       <td className="p-3 flex-1 overflow-hidden text-ellipsis whitespace-nowrap text-[13px] font-medium">{tags}</td>
       <td className="p-3 w-32 shrink-0 text-text-3 text-[12px]">{date}</td>
-      <td className="p-3 w-32 shrink-0 text-text-2 text-[12px] font-mono">{formatSize(img.size)}</td>
+      <td className="p-3 w-32 shrink-0 text-text-2 text-[12px] font-mono">{formatSize(Number(img.size))}</td>
       <td className="p-3 w-24 shrink-0">
         <button onClick={onRemove} className={btnRed}>Delete</button>
       </td>
@@ -252,11 +252,11 @@ function PullModal({ onClose }: { onClose: () => void }) {
                       <span className="text-text-3">{p.id}</span>
                       <span className="text-text-2">{p.status}</span>
                     </div>
-                    {p.current !== undefined && p.total !== undefined && (
+                    {p.current != null && p.total != null && (
                       <div className="bg-surface-3 rounded h-1 overflow-hidden">
                         <div 
                           className="bg-green h-full transition-all duration-300"
-                          style={{ width: `${(p.current / p.total) * 100}%` }}
+                          style={{ width: `${(Number(p.current) / Number(p.total)) * 100}%` }}
                         />
                       </div>
                     )}

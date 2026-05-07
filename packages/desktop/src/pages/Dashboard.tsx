@@ -177,7 +177,7 @@ export function Dashboard() {
         ) : stats ? (
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
             <StatItem label="CPU" value={`${stats.cpu_percent.toFixed(1)}%`} pct={stats.cpu_percent} max={100} />
-            <StatItem label="Memory" value={`${stats.mem_used_mb} / ${stats.mem_total_mb} MB`} pct={stats.mem_used_mb} max={stats.mem_total_mb} />
+            <StatItem label="Memory" value={`${stats.mem_used_mb} / ${stats.mem_total_mb} MB`} pct={Number(stats.mem_used_mb)} max={Number(stats.mem_total_mb)} />
             <StatItem label="Disk" value={`${stats.disk_used_gb.toFixed(1)} / ${stats.disk_total_gb.toFixed(1)} GB`} pct={stats.disk_used_gb} max={stats.disk_total_gb} />
           </div>
         ) : null}
@@ -286,7 +286,7 @@ export function Dashboard() {
           <div className="flex flex-col gap-1">
             {events.map((ev) => (
               <div key={`${ev.time}-${ev.actor}-${ev.action}`} className="flex gap-2.5 text-[12px] font-mono items-center">
-                <span className="text-text-3 text-[10px] shrink-0">{new Date(ev.time * 1000).toLocaleTimeString()}</span>
+                <span className="text-text-3 text-[10px] shrink-0">{new Date(Number(ev.time) * 1000).toLocaleTimeString()}</span>
                 <span className="text-orange">{ev.kind}</span>
                 <span className="text-green">{ev.action}</span>
                 <span className="text-text-2 overflow-hidden text-ellipsis whitespace-nowrap">{ev.actor}</span>

@@ -17,7 +17,7 @@ export function Environments() {
   const [confirmDelete, setConfirmDelete] = useState<EnvVar | null>(null);
   const [search, setSearch] = useState("");
   const debouncedSearch = useDebounce(search, 300);
-  const [masked, setMasked] = useState<Set<number>>(new Set());
+  const [masked, setMasked] = useState<Set<bigint>>(new Set());
   const [formError, setFormError] = useState("");
   const fileRef = useRef<HTMLInputElement>(null);
   const [importMenuOpen, setImportMenuOpen] = useState(false);
@@ -27,7 +27,7 @@ export function Environments() {
   const { upsert, remove } = useEnvVarMutations();
 
   // Auto-mask sensitive keys on load
-  function toggleMask(id: number) {
+  function toggleMask(id: bigint) {
     setMasked(prev => {
       const next = new Set(prev);
       if (next.has(id)) {
@@ -339,7 +339,7 @@ export function Environments() {
             </p>
             <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
               <button onClick={() => setConfirmDelete(null)} style={{ padding: "6px 14px", borderRadius: 4, border: "1px solid var(--border)", background: "var(--surface-2)", color: "var(--text-2)", cursor: "pointer", fontSize: 12 }}>Cancel</button>
-              <button onClick={() => { remove.mutate(confirmDelete.id); setConfirmDelete(null); }} style={{ padding: "6px 14px", borderRadius: 4, border: "1px solid var(--error)", background: "var(--error-dim)", color: "var(--error)", cursor: "pointer", fontSize: 12, fontWeight: 600 }}>Delete</button>
+              <button onClick={() => { remove.mutate(Number(confirmDelete.id)); setConfirmDelete(null); }} style={{ padding: "6px 14px", borderRadius: 4, border: "1px solid var(--error)", background: "var(--error-dim)", color: "var(--error)", cursor: "pointer", fontSize: 12, fontWeight: 600 }}>Delete</button>
             </div>
           </div>
         </div>

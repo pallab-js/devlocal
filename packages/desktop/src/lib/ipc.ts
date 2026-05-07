@@ -1,9 +1,14 @@
 import { invoke } from "@tauri-apps/api/core";
-export type {
+import type {
   AppError, AppInfo, ContainerInfo, ContainerDetails, ContainerStats, DockerEvent,
   EnvVar, HostStats, ImageInfo, LogLine, NetworkContainer, NetworkInfo,
   PullProgress, VolumeInfo,
 } from "@devopslocal/shared";
+export type {
+  AppError, AppInfo, ContainerInfo, ContainerDetails, ContainerStats, DockerEvent,
+  EnvVar, HostStats, ImageInfo, LogLine, NetworkContainer, NetworkInfo,
+  PullProgress, VolumeInfo,
+};
 
 export function isAppError(e: unknown): e is AppError {
   return typeof e === "object" && e !== null && "code" in e && "message" in e;
@@ -47,6 +52,7 @@ export const ipc = {
     invoke<void>("compose_up", { projectName, configDir }),
   composeDown: (projectName: string, configDir: string) =>
     invoke<void>("compose_down", { projectName, configDir }),
+  inspectVolume: (name: string) => invoke<Record<string, unknown>>("inspect_volume", { name }),
   getSetting: (key: string) => invoke<string | null>("get_setting", { key }),
   setSetting: (key: string, value: string) => invoke<void>("set_setting", { key, value }),
 };

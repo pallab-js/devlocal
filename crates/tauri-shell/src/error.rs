@@ -4,7 +4,7 @@ use ts_rs::TS;
 
 #[derive(Debug, Serialize, Error, TS)]
 #[serde(tag = "code", content = "message")]
-#[ts(export, export_to = "../../packages/shared/types/")]
+#[ts(export, export_to = "../../../packages/shared/types/")]
 pub enum AppError {
     #[error("Docker error: {0}")]
     Docker(String),

@@ -56,14 +56,14 @@ export function ContainerDetailsModal({ containerId, onClose }: Props) {
                   <StatBar
                     label="Memory"
                     value={`${stats.mem_used_mb} / ${stats.mem_limit_mb} MB`}
-                    pct={stats.mem_used_mb}
-                    max={stats.mem_limit_mb || 1}
+                    pct={Number(stats.mem_used_mb)}
+                    max={Number(stats.mem_limit_mb) || 1}
                   />
                 </div>
               </div>
             )}
 
-            <LimitsEditor containerId={containerId} initialCpu={null} initialMem={stats?.mem_limit_mb} />
+            <LimitsEditor containerId={containerId} initialCpu={null} initialMem={stats ? Number(stats.mem_limit_mb) : undefined} />
 
             {details.env.length > 0 && (
               <div className="mt-2">

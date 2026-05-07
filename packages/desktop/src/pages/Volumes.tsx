@@ -17,6 +17,8 @@ export function Volumes() {
   const [confirmPrune, setConfirmPrune] = useState(false);
   const [pruning, setPruning] = useState(false);
   const [selected, setSelected] = useState<VolumeInfo | null>(null);
+  const [selectedDetail, setSelectedDetail] = useState<Record<string, unknown> | null>(null);
+  const [loadingDetail, setLoadingDetail] = useState(false);
   const { toast } = useToast();
 
   async function handlePrune() {
@@ -79,8 +81,19 @@ export function Volumes() {
                   <td style={{ padding: "10px 12px", color: "var(--text-3)", fontFamily: "var(--font-mono)", fontSize: 12 }}>{v.scope}</td>
                   <td style={{ padding: "10px 12px", color: "var(--text-3)", fontFamily: "var(--font-mono)", fontSize: 12 }}>{v.created ? new Date(v.created).toLocaleDateString() : "—"}</td>
                   <td style={{ padding: "10px 12px" }}>
-                    <button onClick={() => setSelected(v)} style={{ fontSize: 10, padding: "2px 8px", borderRadius: 4, border: "1px solid var(--border-hi)", background: "transparent", color: "var(--text-3)", cursor: "pointer", fontFamily: "var(--font-mono)" }}>
-                      Inspect
+                    <button onClick={async () => {
+                      setLoadingDetail(true);
+                      setSelected(v);
+                      try {
+                        const detail = await ipc.inspectVolume(v.name);
+                        setSelectedDetail(detail);
+                      } catch {
+                        setSelectedDetail(null);
+                      } finally {
+                        setLoadingDetail(false);
+                      }
+                    }} style={{ fontSize: 10, padding: "2px 8px", borderRadius: 4, border: "1px solid var(--border-hi)", background: "transparent", color: "var(--text-3)", cursor: "pointer", fontFamily: "var(--font-mono)" }}>
+                      {loadingDetail ? "…" : "Inspect"}
                     </button>
                   </td>
                 </tr>
@@ -92,11 +105,11 @@ export function Volumes() {
 
       {/* Inspect modal */}
       {selected && (
-        <div onClick={() => setSelected(null)} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.6)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 100 }}>
-          <div onClick={(e) => e.stopPropagation()} style={{ background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 10, padding: "1.5rem", width: 480 }}>
+        <div onClick={() => { setSelected(null); setSelectedDetail(null); }} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.6)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 100 }}>
+          <div onClick={(e) => e.stopPropagation()} style={{ background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 10, padding: "1.5rem", width: 520, maxHeight: "80vh", overflow: "auto" }}>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "1rem" }}>
               <span style={{ fontWeight: 700, color: "var(--violet)", fontSize: 15, fontFamily: "var(--font-mono)" }}>{selected.name}</span>
-              <button onClick={() => setSelected(null)} style={{ background: "none", border: "none", color: "var(--text-3)", cursor: "pointer", fontSize: 18 }}>×</button>
+              <button onClick={() => { setSelected(null); setSelectedDetail(null); }} style={{ background: "none", border: "none", color: "var(--text-3)", cursor: "pointer", fontSize: 18 }}>×</button>
             </div>
             <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
               {[
@@ -108,6 +121,12 @@ export function Volumes() {
                 <div key={k} style={{ display: "grid", gridTemplateColumns: "100px 1fr", gap: 8 }}>
                   <span style={{ fontSize: 10, fontFamily: "var(--font-mono)", textTransform: "uppercase", letterSpacing: "0.8px", color: "var(--text-3)" }}>{k}</span>
                   <span style={{ fontSize: 12, fontFamily: "var(--font-mono)", color: "var(--text-2)", wordBreak: "break-all" }}>{v}</span>
+                </div>
+              ))}
+              {selectedDetail && Object.entries(selectedDetail).filter(([k]) => !["Name", "Driver", "Mountpoint", "CreatedAt", "Scope"].includes(k)).map(([k, v]) => (
+                <div key={k} style={{ display: "grid", gridTemplateColumns: "100px 1fr", gap: 8 }}>
+                  <span style={{ fontSize: 10, fontFamily: "var(--font-mono)", textTransform: "uppercase", letterSpacing: "0.8px", color: "var(--text-3)" }}>{k}</span>
+                  <span style={{ fontSize: 12, fontFamily: "var(--font-mono)", color: "var(--text-2)", wordBreak: "break-all" }}>{typeof v === "object" && v !== null ? JSON.stringify(v, null, 1) : String(v)}</span>
                 </div>
               ))}
             </div>
