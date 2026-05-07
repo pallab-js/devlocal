@@ -4,18 +4,11 @@ import { SideNav } from "./SideNav";
 
 export function AppShell() {
   return (
-    <div style={{ display: "flex", flexDirection: "column", height: "100vh", overflow: "hidden" }}>
+    <div className="flex flex-col h-screen overflow-hidden">
       <TopBar />
-      <div style={{ display: "flex", flex: 1, overflow: "hidden" }}>
+      <div className="flex flex-1 overflow-hidden">
         <SideNav />
-        <main
-          style={{
-            flex: 1,
-            overflow: "auto",
-            background: "var(--bg)",
-            padding: "1.5rem",
-          }}
-        >
+        <main className="flex-1 overflow-auto bg-bg p-6">
           <Outlet />
         </main>
       </div>

@@ -4,5 +4,7 @@
   "version": "0.1.0",
   "type": "module",
   "scripts": {
+    "lint": "tsc --noEmit && eslint .",
+    "format": "prettier --write \"src/**/*.{ts,tsx,css}\""
   }
 }

@@ -1,5 +1,6 @@
-import { useState } from "react";
+import { useState, useCallback } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useModalClose } from "../hooks/useModalClose";
 import { ipc, type VolumeInfo } from "../lib/ipc";
 import { Skeleton } from "../components/Skeleton";
 import { useToast } from "../components/Toast";
@@ -18,6 +19,11 @@ export function Volumes() {
   const [pruning, setPruning] = useState(false);
   const [selected, setSelected] = useState<VolumeInfo | null>(null);
   const { toast } = useToast();
+
+  const closeInspectModal = useCallback(() => setSelected(null), []);
+  useModalClose(closeInspectModal);
+  const closePruneModal = useCallback(() => setConfirmPrune(false), []);
+  useModalClose(closePruneModal);
 
   async function handlePrune() {
     setPruning(true);
@@ -92,11 +98,11 @@ export function Volumes() {
 
       {/* Inspect modal */}
       {selected && (
-        <div onClick={() => setSelected(null)} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.6)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 100 }}>
+        <div onClick={closeInspectModal} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.6)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 100 }}>
           <div onClick={(e) => e.stopPropagation()} style={{ background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 10, padding: "1.5rem", width: 480 }}>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "1rem" }}>
               <span style={{ fontWeight: 700, color: "var(--violet)", fontSize: 15, fontFamily: "var(--font-mono)" }}>{selected.name}</span>
-              <button onClick={() => setSelected(null)} style={{ background: "none", border: "none", color: "var(--text-3)", cursor: "pointer", fontSize: 18 }}>×</button>
+              <button onClick={closeInspectModal} style={{ background: "none", border: "none", color: "var(--text-3)", cursor: "pointer", fontSize: 18 }}>×</button>
             </div>
             <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
               {[
@@ -117,14 +123,14 @@ export function Volumes() {
 
       {/* Prune confirm */}
       {confirmPrune && (
-        <div onClick={() => setConfirmPrune(false)} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.6)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 100 }}>
+        <div onClick={closePruneModal} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.6)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 100 }}>
           <div onClick={(e) => e.stopPropagation()} style={{ background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 10, padding: "1.5rem", width: 360 }}>
             <p style={{ color: "var(--text)", fontSize: 14, fontWeight: 600, margin: "0 0 8px" }}>Prune unused volumes?</p>
             <p style={{ color: "var(--text-3)", fontSize: 13, margin: "0 0 1.25rem" }}>
               This will permanently delete all volumes not used by any container.
             </p>
             <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
-              <button onClick={() => setConfirmPrune(false)} style={btnStyle("var(--text-2)", "var(--surface-2)")}>Cancel</button>
+              <button onClick={closePruneModal} style={btnStyle("var(--text-2)", "var(--surface-2)")}>Cancel</button>
               <button onClick={handlePrune} disabled={pruning} style={btnStyle("var(--error)", "var(--error-dim)")}>
                 {pruning ? "Pruning…" : "Prune"}
               </button>

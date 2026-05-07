@@ -1,6 +1,7 @@
-import { useState } from "react";
+import { useState, useCallback } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { useNetworkTopology } from "../hooks/useQueries";
+import { useModalClose } from "../hooks/useModalClose";
 import { ipc, type NetworkInfo } from "../lib/ipc";
 import { Skeleton } from "../components/Skeleton";
 
@@ -70,6 +71,9 @@ export function Network() {
   const qc = useQueryClient();
   const { data: networks, isLoading, error, isFetching } = useNetworkTopology();
   const [selected, setSelected] = useState<NetworkInfo | null>(null);
+
+  const closeNetworkModal = useCallback(() => setSelected(null), []);
+  useModalClose(closeNetworkModal);
 
   async function handleInspect(id: string) {
     const detail = await ipc.inspectNetwork(id);
@@ -145,7 +149,7 @@ export function Network() {
         )}
       </section>
 
-      {selected && <NetworkDetailModal net={selected} onClose={() => setSelected(null)} />}
+      {selected && <NetworkDetailModal net={selected} onClose={closeNetworkModal} />}
     </div>
   );
 }

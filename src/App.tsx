@@ -1,5 +1,6 @@
 import { useEffect } from "react";
 import { Routes, Route, useNavigate } from "react-router-dom";
+import { useQueryClient } from "@tanstack/react-query";
 import { AppShell } from "./components/layout/AppShell";
 import { ErrorBoundary } from "./components/ErrorBoundary";
 import { ToastProvider } from "./components/Toast";
@@ -12,18 +13,25 @@ import { Settings } from "./pages/Settings";
 
 function KeyboardShortcuts() {
   const navigate = useNavigate();
+  const qc = useQueryClient();
   useEffect(() => {
     const ROUTES: Record<string, string> = {
       "1": "/", "2": "/logs", "3": "/network", "4": "/environments", "5": "/settings",
     };
     function handler(e: KeyboardEvent) {
       if (e.metaKey || e.ctrlKey) {
-        if (ROUTES[e.key]) { e.preventDefault(); navigate(ROUTES[e.key]); }
+        if (e.key === "r" || e.key === "R") {
+          e.preventDefault();
+          qc.invalidateQueries();
+        } else if (ROUTES[e.key]) {
+          e.preventDefault();
+          navigate(ROUTES[e.key]);
+        }
       }
     }
     window.addEventListener("keydown", handler);
     return () => window.removeEventListener("keydown", handler);
-  }, [navigate]);
+  }, [navigate, qc]);
   return null;
 }
 
