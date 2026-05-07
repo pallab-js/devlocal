@@ -1,4 +1,7 @@
-use crate::{import_env_file_inner, is_sensitive, pool, validate_scope, EnvVar, KEYRING_SERVICE};
+use crate::{
+    import_env_file_inner, is_sensitive, pool, validate_key, validate_scope, EnvVar,
+    KEYRING_SERVICE,
+};
 
 #[tauri::command]
 pub async fn list_env_vars(scope: Option<String>) -> Result<Vec<EnvVar>, String> {
@@ -25,6 +28,7 @@ pub async fn list_env_vars(scope: Option<String>) -> Result<Vec<EnvVar>, String>
 #[tauri::command]
 pub async fn upsert_env_var(key: String, value: String, scope: String) -> Result<EnvVar, String> {
     validate_scope(&scope)?;
+    validate_key(&key)?;
     let pool = pool()?;
 
     // Security 2.3: store sensitive values in OS keychain
@@ -58,10 +62,12 @@ pub async fn upsert_env_var(key: String, value: String, scope: String) -> Result
 }
 
 #[tauri::command]
-pub async fn delete_env_var(id: i64) -> Result<(), String> {
+pub async fn delete_env_var(id: i64, scope: String) -> Result<(), String> {
+    validate_scope(&scope)?;
     let pool = pool()?;
-    sqlx::query("DELETE FROM env_vars WHERE id = ?")
+    sqlx::query("DELETE FROM env_vars WHERE id = ? AND scope = ?")
         .bind(id)
+        .bind(&scope)
         .execute(pool)
         .await
         .map_err(|e| e.to_string())?;
@@ -106,6 +112,18 @@ pub async fn export_env_scope(scope: String) -> Result<String, String> {
 #[tauri::command]
 pub async fn clear_all_env_vars() -> Result<u64, String> {
     let pool = pool()?;
+    // Clean up keychain entries before deleting DB rows
+    let sensitive: Vec<(String, String)> =
+        sqlx::query_as("SELECT key, scope FROM env_vars WHERE value = '__keychain__'")
+            .fetch_all(pool)
+            .await
+            .map_err(|e| e.to_string())?;
+    for (key, scope) in sensitive {
+        let keyring_key = format!("{scope}:{key}");
+        if let Ok(entry) = keyring::Entry::new(KEYRING_SERVICE, &keyring_key) {
+            let _ = entry.delete_credential();
+        }
+    }
     let result = sqlx::query("DELETE FROM env_vars")
         .execute(pool)
         .await
@@ -179,6 +197,10 @@ pub async fn get_setting(key: String) -> Result<Option<String>, String> {
 
 #[tauri::command]
 pub async fn set_setting(key: String, value: String) -> Result<(), String> {
+    const ALLOWED_SETTINGS: &[&str] = &["poll_containers", "poll_stats", "docker_socket"];
+    if !ALLOWED_SETTINGS.contains(&key.as_str()) {
+        return Err(format!("Unknown setting key: {key}"));
+    }
     let pool = pool()?;
     sqlx::query(
         "INSERT INTO settings (key, value) VALUES (?, ?)

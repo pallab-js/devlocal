@@ -44,6 +44,13 @@ pub fn run(context: tauri::Context) {
             tauri::async_runtime::spawn(async move {
                 if let Err(e) = ::db::init(&handle).await {
                     eprintln!("DB init error: {e}");
+                    let _ = tauri_plugin_dialog::DialogExt::dialog(&handle)
+                        .message(format!(
+                            "Database failed to initialize:\n{e}\n\nThe application will now exit."
+                        ))
+                        .title("Fatal Error")
+                        .blocking_show();
+                    std::process::exit(1);
                 }
             });
 
@@ -110,6 +117,7 @@ pub fn run(context: tauri::Context) {
             db::set_setting,
             settings::get_app_info,
             settings::test_docker_connection,
+            db::get_db_pool_stats,
         ])
         .run(context)
         .expect("error while running tauri application");

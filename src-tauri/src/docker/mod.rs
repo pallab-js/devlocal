@@ -5,6 +5,7 @@ use bollard::container::{
 use bollard::models::ContainerSummary;
 use bollard::system::EventsOptions;
 use bollard::Docker;
+use error::DockerError;
 use futures_util::StreamExt;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -140,7 +141,7 @@ fn summary_to_info(c: ContainerSummary) -> ContainerInfo {
     }
 }
 
-async fn fetch_one(docker: &Docker, id: &str) -> Result<ContainerInfo, String> {
+async fn fetch_one(docker: &Docker, id: &str) -> Result<ContainerInfo, DockerError> {
     let opts = ListContainersOptions::<String> {
         all: true,
         filters: {
@@ -152,26 +153,24 @@ async fn fetch_one(docker: &Docker, id: &str) -> Result<ContainerInfo, String> {
     };
     docker
         .list_containers(Some(opts))
-        .await
-        .map_err(|e| e.to_string())?
+        .await?
         .into_iter()
         .next()
         .map(summary_to_info)
-        .ok_or_else(|| "Container not found".to_string())
+        .ok_or_else(|| DockerError::NotFound(id.to_string()))
 }
 
 // ── Commands ─────────────────────────────────────────────────────────────────
 
 #[tauri::command]
-pub async fn list_containers(docker: State<'_, DockerState>) -> Result<Vec<ContainerInfo>, String> {
+pub async fn list_containers(docker: State<'_, DockerState>) -> Result<Vec<ContainerInfo>, DockerError> {
     let docker = docker.0.as_ref().ok_or("Docker not connected")?;
     let containers = docker
         .list_containers(Some(ListContainersOptions::<String> {
             all: true,
             ..Default::default()
         }))
-        .await
-        .map_err(|e| e.to_string())?;
+        .await?;
     Ok(containers.into_iter().map(summary_to_info).collect())
 }
 
@@ -179,12 +178,11 @@ pub async fn list_containers(docker: State<'_, DockerState>) -> Result<Vec<Conta
 pub async fn start_container(
     id: String,
     docker: State<'_, DockerState>,
-) -> Result<ContainerInfo, String> {
+) -> Result<ContainerInfo, DockerError> {
     let docker = docker.0.as_ref().ok_or("Docker not connected")?;
     docker
         .start_container(&id, None::<StartContainerOptions<String>>)
-        .await
-        .map_err(|e| e.to_string())?;
+        .await?;
     fetch_one(docker, &id).await
 }
 
@@ -192,12 +190,11 @@ pub async fn start_container(
 pub async fn stop_container(
     id: String,
     docker: State<'_, DockerState>,
-) -> Result<ContainerInfo, String> {
+) -> Result<ContainerInfo, DockerError> {
     let docker = docker.0.as_ref().ok_or("Docker not connected")?;
     docker
         .stop_container(&id, Some(StopContainerOptions { t: 10 }))
-        .await
-        .map_err(|e| e.to_string())?;
+        .await?;
     fetch_one(docker, &id).await
 }
 
@@ -205,12 +202,11 @@ pub async fn stop_container(
 pub async fn restart_container(
     id: String,
     docker: State<'_, DockerState>,
-) -> Result<ContainerInfo, String> {
+) -> Result<ContainerInfo, DockerError> {
     let docker = docker.0.as_ref().ok_or("Docker not connected")?;
     docker
         .restart_container(&id, Some(RestartContainerOptions { t: 10 }))
-        .await
-        .map_err(|e| e.to_string())?;
+        .await?;
     fetch_one(docker, &id).await
 }
 
@@ -218,12 +214,11 @@ pub async fn restart_container(
 pub async fn inspect_container(
     id: String,
     docker: State<'_, DockerState>,
-) -> Result<ContainerDetails, String> {
+) -> Result<ContainerDetails, DockerError> {
     let docker = docker.0.as_ref().ok_or("Docker not connected")?;
     let info = docker
         .inspect_container(&id, None)
-        .await
-        .map_err(|e| e.to_string())?;
+        .await?;
     let name = info
         .name
         .unwrap_or_default()
@@ -285,15 +280,14 @@ pub async fn inspect_container(
 }
 
 #[tauri::command]
-pub async fn get_host_stats(sys_state: State<'_, SysState>) -> Result<HostStats, String> {
-    // Bug 3.3: call refresh_cpu_usage twice with a sleep for accurate delta
+pub async fn get_host_stats(sys_state: State<'_, SysState>) -> Result<HostStats, DockerError> {
     {
-        let mut sys = sys_state.0.lock().map_err(|e| e.to_string())?;
+        let mut sys = sys_state.0.lock()?;
         sys.refresh_cpu_usage();
     }
     tokio::time::sleep(std::time::Duration::from_millis(200)).await;
     let (cpu_percent, mem_used_mb, mem_total_mb) = {
-        let mut sys = sys_state.0.lock().map_err(|e| e.to_string())?;
+        let mut sys = sys_state.0.lock()?;
         sys.refresh_cpu_usage();
         sys.refresh_memory();
         (
@@ -321,12 +315,11 @@ pub async fn get_host_stats(sys_state: State<'_, SysState>) -> Result<HostStats,
 #[tauri::command]
 pub async fn get_network_topology(
     docker: State<'_, DockerState>,
-) -> Result<Vec<NetworkInfo>, String> {
+) -> Result<Vec<NetworkInfo>, DockerError> {
     let docker = docker.0.as_ref().ok_or("Docker not connected")?;
     let networks = docker
         .list_networks::<String>(None)
-        .await
-        .map_err(|e| e.to_string())?;
+        .await?;
     Ok(networks
         .into_iter()
         .map(|net| {
@@ -364,12 +357,11 @@ pub async fn get_network_topology(
 pub async fn inspect_network(
     id: String,
     docker: State<'_, DockerState>,
-) -> Result<NetworkInfo, String> {
+) -> Result<NetworkInfo, DockerError> {
     let docker = docker.0.as_ref().ok_or("Docker not connected")?;
     let net = docker
         .inspect_network::<String>(&id, None)
-        .await
-        .map_err(|e| e.to_string())?;
+        .await?;
     let ipam = net
         .ipam
         .as_ref()
@@ -407,11 +399,10 @@ pub async fn stream_logs(
     app: AppHandle,
     log_state: State<'_, LogStreamState>,
     docker: State<'_, DockerState>,
-) -> Result<(), String> {
+) -> Result<(), DockerError> {
     let docker = docker.0.as_ref().ok_or("Docker not connected")?;
-    // Abort previous stream before spawning new one
     {
-        let mut guard = log_state.0.lock().map_err(|e| e.to_string())?;
+        let mut guard = log_state.0.lock()?;
         if let Some(old) = guard.take() {
             old.abort();
         }
@@ -432,25 +423,33 @@ pub async fn stream_logs(
     let docker_clone = Arc::clone(docker);
     let handle = tokio::spawn(async move {
         let mut stream = docker_clone.logs(&container_id, Some(opts));
-        while let Some(Ok(msg)) = stream.next().await {
-            let raw = msg.to_string();
-            let (ts, text) = if let Some(idx) = raw.find(' ') {
-                (raw[..idx].to_string(), raw[idx + 1..].to_string())
-            } else {
-                (String::new(), raw)
-            };
-            let _ = app.emit("log-line", serde_json::json!({ "ts": ts, "text": text }));
+        while let Some(result) = stream.next().await {
+            match result {
+                Ok(msg) => {
+                    let raw = msg.to_string();
+                    let (ts, text) = if let Some(idx) = raw.find(' ') {
+                        (raw[..idx].to_string(), raw[idx + 1..].to_string())
+                    } else {
+                        (String::new(), raw)
+                    };
+                    let _ = app.emit("log-line", serde_json::json!({ "ts": ts, "text": text }));
+                }
+                Err(e) => {
+                    eprintln!("Log stream error: {e}");
+                    break;
+                }
+            }
         }
     });
 
-    let mut guard = log_state.0.lock().map_err(|e| e.to_string())?;
+    let mut guard = log_state.0.lock()?;
     *guard = Some(handle);
     Ok(())
 }
 
 #[tauri::command]
-pub async fn stop_logs(log_state: State<'_, LogStreamState>) -> Result<(), String> {
-    let mut guard = log_state.0.lock().map_err(|e| e.to_string())?;
+pub async fn stop_logs(log_state: State<'_, LogStreamState>) -> Result<(), DockerError> {
+    let mut guard = log_state.0.lock()?;
     if let Some(handle) = guard.take() {
         handle.abort();
     }
@@ -463,33 +462,45 @@ pub async fn stream_docker_events(
     app: AppHandle,
     event_state: State<'_, EventStreamState>,
     docker: State<'_, DockerState>,
-) -> Result<(), String> {
+) -> Result<(), DockerError> {
     let docker = docker.0.as_ref().ok_or("Docker not connected")?;
+    {
+        let mut guard = event_state.0.lock()?;
+        if let Some(old) = guard.take() {
+            old.abort();
+        }
+    }
+
     let docker_clone = Arc::clone(docker);
     let handle = tokio::spawn(async move {
         let mut stream = docker_clone.events(None::<EventsOptions<String>>);
-        while let Some(Ok(event)) = stream.next().await {
-            let ev = DockerEvent {
-                kind: event.typ.map(|t| t.to_string()).unwrap_or_default(),
-                action: event.action.unwrap_or_default(),
-                actor: event.actor.and_then(|a| a.id).unwrap_or_default(),
-                time: event.time.unwrap_or(0),
-            };
-            let _ = app.emit("docker-event", ev);
+        while let Some(result) = stream.next().await {
+            match result {
+                Ok(event) => {
+                    let ev = DockerEvent {
+                        kind: event.typ.map(|t| t.to_string()).unwrap_or_default(),
+                        action: event.action.unwrap_or_default(),
+                        actor: event.actor.and_then(|a| a.id).unwrap_or_default(),
+                        time: event.time.unwrap_or(0),
+                    };
+                    let _ = app.emit("docker-event", ev);
+                }
+                Err(e) => {
+                    eprintln!("Docker event stream error: {e}");
+                    break;
+                }
+            }
         }
     });
 
-    let mut guard = event_state.0.lock().map_err(|e| e.to_string())?;
-    if let Some(old) = guard.take() {
-        old.abort();
-    }
+    let mut guard = event_state.0.lock()?;
     *guard = Some(handle);
     Ok(())
 }
 
 #[tauri::command]
-pub async fn stop_docker_events(event_state: State<'_, EventStreamState>) -> Result<(), String> {
-    let mut guard = event_state.0.lock().map_err(|e| e.to_string())?;
+pub async fn stop_docker_events(event_state: State<'_, EventStreamState>) -> Result<(), DockerError> {
+    let mut guard = event_state.0.lock()?;
     if let Some(handle) = guard.take() {
         handle.abort();
     }
@@ -501,20 +512,24 @@ pub async fn stop_docker_events(event_state: State<'_, EventStreamState>) -> Res
 pub async fn get_container_stats(
     id: String,
     docker: State<'_, DockerState>,
-) -> Result<ContainerStats, String> {
+) -> Result<ContainerStats, DockerError> {
     let docker = docker.0.as_ref().ok_or("Docker not connected")?;
-    let stats = docker
-        .stats(
-            &id,
-            Some(StatsOptions {
-                stream: false,
-                one_shot: true,
-            }),
-        )
-        .next()
-        .await
-        .ok_or_else(|| format!("No stats for container {id}"))?
-        .map_err(|e| e.to_string())?;
+    let stats = tokio::time::timeout(
+        std::time::Duration::from_secs(10),
+        docker
+            .stats(
+                &id,
+                Some(StatsOptions {
+                    stream: false,
+                    one_shot: true,
+                }),
+            )
+            .next(),
+    )
+    .await
+    .map_err(|_| DockerError::Other("Stats request timed out".into()))?
+    .ok_or_else(|| DockerError::NotFound(id.clone()))?
+    .map_err(DockerError::Bollard)?;
 
     let cpu_delta = stats
         .cpu_stats
@@ -555,12 +570,11 @@ pub async fn get_container_stats(
 
 /// List Docker volumes (Feature 7.3).
 #[tauri::command]
-pub async fn list_volumes(docker: State<'_, DockerState>) -> Result<Vec<VolumeInfo>, String> {
+pub async fn list_volumes(docker: State<'_, DockerState>) -> Result<Vec<VolumeInfo>, DockerError> {
     let docker = docker.0.as_ref().ok_or("Docker not connected")?;
     let result = docker
         .list_volumes::<String>(None)
-        .await
-        .map_err(|e| e.to_string())?;
+        .await?;
     let volumes = result.volumes.unwrap_or_default();
     Ok(volumes
         .into_iter()
@@ -576,11 +590,10 @@ pub async fn list_volumes(docker: State<'_, DockerState>) -> Result<Vec<VolumeIn
 
 /// Prune unused Docker volumes (Feature 7.3).
 #[tauri::command]
-pub async fn prune_volumes(docker: State<'_, DockerState>) -> Result<u64, String> {
+pub async fn prune_volumes(docker: State<'_, DockerState>) -> Result<u64, DockerError> {
     let docker = docker.0.as_ref().ok_or("Docker not connected")?;
     let result = docker
         .prune_volumes::<String>(None)
-        .await
-        .map_err(|e| e.to_string())?;
+        .await?;
     Ok(result.space_reclaimed.unwrap_or(0) as u64)
 }

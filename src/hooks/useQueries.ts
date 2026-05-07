@@ -46,7 +46,7 @@ export function useEnvVarMutations() {
       ipc.upsertEnvVar(key, value, scope),
     onSuccess: invalidate,
   });
-  const remove = useMutation({ mutationFn: ipc.deleteEnvVar, onSuccess: invalidate });
+  const remove = useMutation({ mutationFn: ({ id, scope }: { id: number; scope: string }) => ipc.deleteEnvVar(id, scope), onSuccess: invalidate });
 
   return { upsert, remove };
 }
@@ -55,5 +55,13 @@ export function useNetworkTopology() {
   return useQuery({
     queryKey: ["network-topology"],
     queryFn: () => ipc.getNetworkTopology(),
+  });
+}
+
+export function useDbPoolStats() {
+  return useQuery({
+    queryKey: ["db-pool-stats"],
+    queryFn: () => ipc.getDbPoolStats(),
+    refetchInterval: 5000,
   });
 }

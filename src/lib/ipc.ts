@@ -74,6 +74,11 @@ export interface VolumeInfo {
   created: string;
 }
 
+export interface DbPoolStats {
+  size: number;
+  idle: number;
+}
+
 export const ipc = {
   getAppInfo: () => invoke<AppInfo>("get_app_info"),
   testDockerConnection: (socketPath?: string) =>
@@ -94,7 +99,7 @@ export const ipc = {
   listEnvVars: (scope?: string) => invoke<EnvVar[]>("list_env_vars", { scope: scope ?? null }),
   upsertEnvVar: (key: string, value: string, scope: string) =>
     invoke<EnvVar>("upsert_env_var", { key, value, scope }),
-  deleteEnvVar: (id: number) => invoke<void>("delete_env_var", { id }),
+  deleteEnvVar: (id: number, scope: string) => invoke<void>("delete_env_var", { id, scope }),
   importEnvFile: (content: string, scope: string) => invoke<number>("import_env_file", { content, scope }),
   exportEnvScope: (scope: string) => invoke<string>("export_env_scope", { scope }),
   getNetworkTopology: () => invoke<NetworkInfo[]>("get_network_topology"),
@@ -103,4 +108,7 @@ export const ipc = {
   pruneVolumes: () => invoke<number>("prune_volumes"),
   getSetting: (key: string) => invoke<string | null>("get_setting", { key }),
   setSetting: (key: string, value: string) => invoke<void>("set_setting", { key, value }),
+  getDbPoolStats: () => invoke<DbPoolStats>("get_db_pool_stats"),
+  updateTrayMenu: (containers: ContainerInfo[]) =>
+    invoke<void>("update_tray_menu", { containers }),
 };

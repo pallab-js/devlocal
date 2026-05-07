@@ -1,40 +1,47 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, useCallback } from "react";
 import { listen } from "@tauri-apps/api/event";
 import { useQueryClient } from "@tanstack/react-query";
 import { useContainers, useContainerMutations, useHostStats, useNetworkTopology } from "../hooks/useQueries";
+import { useModalClose } from "../hooks/useModalClose";
 import { ipc, type ContainerInfo, type DockerEvent } from "../lib/ipc";
 import { Skeleton } from "../components/Skeleton";
 import { ContainerDetailsModal } from "../components/ContainerDetailsModal";
 import { Link } from "react-router-dom";
+import { cn } from "../lib/cn";
 
-const STATE_STYLE: Record<string, { color: string; bg: string; border: string }> = {
-  running:    { color: "var(--green)",  bg: "var(--green-dim)",   border: "var(--green-border)" },
-  paused:     { color: "var(--orange)", bg: "var(--orange-dim)",  border: "rgba(255,160,114,0.3)" },
-  restarting: { color: "var(--violet)", bg: "var(--violet-dim)",  border: "rgba(130,110,220,0.3)" },
-  exited:     { color: "var(--text-3)", bg: "var(--surface-2)",   border: "var(--border-hi)" },
-  dead:       { color: "var(--error)",  bg: "var(--error-dim)",   border: "rgba(255,180,171,0.3)" },
-  created:    { color: "var(--text-3)", bg: "var(--surface-2)",   border: "var(--border-hi)" },
+const STATE_MAP: Record<string, string> = {
+  running:    "text-green bg-green-dim border-green-border",
+  paused:     "text-orange bg-orange-dim border-orange-dim",
+  restarting: "text-violet bg-violet-dim border-violet-dim",
+  exited:     "text-text-3 bg-surface-2 border-border-hi",
+  dead:       "text-error bg-error-dim border-error-dim",
+  created:    "text-text-3 bg-surface-2 border-border-hi",
 };
 
 function StatusBadge({ state }: { state: string }) {
-  const s = STATE_STYLE[state] ?? STATE_STYLE.exited;
+  const s = STATE_MAP[state] ?? STATE_MAP.exited;
   return (
-    <span style={{
-      fontSize: 10, fontFamily: "var(--font-mono)", textTransform: "uppercase", letterSpacing: "0.8px",
-      padding: "2px 8px", borderRadius: 9999,
-      background: s.bg, color: s.color, border: `1px solid ${s.border}`,
-    }}>{state}</span>
+    <span className={cn(
+      "text-[10px] font-mono uppercase tracking-wider px-2 py-0.5 rounded-full border",
+      s
+    )}>{state}</span>
   );
 }
 
 function ProgressBar({ value, max }: { value: number; max: number }) {
   const pct = Math.min((value / max) * 100, 100);
   return (
-    <div style={{ background: "var(--surface-3)", borderRadius: 4, height: 6, overflow: "hidden" }}>
-      <div style={{ width: `${pct}%`, height: "100%", background: pct > 80 ? "var(--orange)" : "var(--green)", transition: "width 0.3s" }} />
+    <div className="bg-surface-3 rounded h-1.5 overflow-hidden">
+      <div
+        className={cn("h-full transition-[width] duration-300", pct > 80 ? "bg-orange" : "bg-green")}
+        style={{ width: `${pct}%` }}
+      />
     </div>
   );
 }
+
+const containerRowActions = (color: string, bg: string) =>
+  `text-[11px] px-2.5 py-0.5 rounded border border-${color.replace("var(--", "").replace(")", "")} bg-${bg.replace("var(--", "").replace(")", "")} cursor-pointer font-mono`;
 
 function ContainerRow({ c, onStart, onStop, onRestart, onDetails }: {
   c: ContainerInfo;
@@ -43,27 +50,23 @@ function ContainerRow({ c, onStart, onStop, onRestart, onDetails }: {
   const running = c.state === "running";
   const canRestart = running || c.state === "paused";
   return (
-    <tr style={{ borderBottom: "1px solid var(--border-light)" }}>
-      <td style={{ padding: "10px 12px" }}>
-        <button onClick={onDetails} style={{ background: "none", border: "none", color: "var(--text)", fontWeight: 500, cursor: "pointer", fontSize: 13, padding: 0, textAlign: "left" }}>
+    <tr className="border-b border-border-light">
+      <td className="py-2.5 px-3">
+        <button onClick={onDetails} className="bg-none border-none text-text font-medium cursor-pointer text-sm p-0 text-left">
           {c.name}
         </button>
       </td>
-      <td style={{ padding: "10px 12px", color: "var(--text-3)", fontFamily: "var(--font-mono)", fontSize: 12 }}>{c.image}</td>
-      <td style={{ padding: "10px 12px" }}><StatusBadge state={c.state} /></td>
-      <td style={{ padding: "10px 12px" }}>
-        <div style={{ display: "flex", gap: 6 }}>
-          {!running && <button onClick={onStart} style={btn("var(--green)", "var(--green-dim)")}>Start</button>}
-          {running && <button onClick={onStop} style={btn("var(--orange)", "var(--orange-dim)")}>Stop</button>}
-          {canRestart && <button onClick={onRestart} style={btn("var(--violet)", "var(--violet-dim)")}>Restart</button>}
+      <td className="py-2.5 px-3 text-text-3 font-mono text-xs">{c.image}</td>
+      <td className="py-2.5 px-3"><StatusBadge state={c.state} /></td>
+      <td className="py-2.5 px-3">
+        <div className="flex gap-1.5">
+          {!running && <button onClick={onStart} className="text-xs px-2.5 py-0.5 rounded border border-green-border bg-green-dim text-green cursor-pointer font-mono">Start</button>}
+          {running && <button onClick={onStop} className="text-xs px-2.5 py-0.5 rounded border border-orange-dim bg-orange-dim text-orange cursor-pointer font-mono">Stop</button>}
+          {canRestart && <button onClick={onRestart} className="text-xs px-2.5 py-0.5 rounded border border-violet-dim bg-violet-dim text-violet cursor-pointer font-mono">Restart</button>}
         </div>
       </td>
     </tr>
   );
-}
-
-function btn(color: string, bg: string): React.CSSProperties {
-  return { fontSize: 11, padding: "3px 10px", borderRadius: 4, border: `1px solid ${color}`, background: bg, color, cursor: "pointer", fontFamily: "var(--font-mono)" };
 }
 
 export function Dashboard() {
@@ -87,7 +90,10 @@ export function Dashboard() {
         qc.invalidateQueries({ queryKey: ["network-topology"] });
       }
     });
-    return () => { unlisten.then((fn) => fn()); };
+    return () => {
+      unlisten.then((fn) => fn());
+      ipc.stopDockerEvents().catch(() => {});
+    };
   }, [qc]);
 
   const { data: containers, isLoading: cLoading, error: cError, isFetching } = useContainers(paused);
@@ -95,22 +101,30 @@ export function Dashboard() {
   const { data: stats, isLoading: sLoading } = useHostStats(paused);
   const { data: networks } = useNetworkTopology();
 
+  // Update tray menu with top-5 running containers whenever the list changes
+  useEffect(() => {
+    if (containers) ipc.updateTrayMenu(containers).catch(() => {});
+  }, [containers]);
+
+  const closeDetails = useCallback(() => setDetailsId(null), []);
+  useModalClose(closeDetails);
+
   const runningCount = containers?.filter(c => c.state === "running").length ?? 0;
   const totalCount = containers?.length ?? 0;
 
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: "1.5rem" }}>
-      <h1 style={{ fontSize: 18, fontWeight: 700, color: "var(--text)", margin: 0 }}>Dashboard</h1>
+    <div className="flex flex-col gap-6">
+      <h1 className="text-lg font-bold text-text m-0">Dashboard</h1>
 
       {/* Host Stats */}
-      <section style={card}>
-        <h2 style={secTitle}>Host Resources</h2>
+      <section className="bg-surface border border-border rounded-lg px-5 py-4">
+        <h2 className={secTitle}>Host Resources</h2>
         {sLoading ? (
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: 16 }}>
-            {[0,1,2].map(i => <div key={i}><Skeleton height={12} width="60%" /><div style={{marginTop:8}}><Skeleton height={6} /></div></div>)}
+          <div className="grid grid-cols-3 gap-4">
+            {[0,1,2].map(i => <div key={i}><Skeleton height={12} width="60%" /><div className="mt-2"><Skeleton height={6} /></div></div>)}
           </div>
         ) : stats ? (
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: 16 }}>
+          <div className="grid grid-cols-3 gap-4">
             <StatItem label="CPU" value={`${stats.cpu_percent.toFixed(1)}%`} pct={stats.cpu_percent} max={100} />
             <StatItem label="Memory" value={`${stats.mem_used_mb} / ${stats.mem_total_mb} MB`} pct={stats.mem_used_mb} max={stats.mem_total_mb} />
             <StatItem label="Disk" value={`${stats.disk_used_gb.toFixed(1)} / ${stats.disk_total_gb.toFixed(1)} GB`} pct={stats.disk_used_gb} max={stats.disk_total_gb} />
@@ -119,41 +133,50 @@ export function Dashboard() {
       </section>
 
       {/* Containers */}
-      <section style={card}>
-        <div style={{ display: "flex", alignItems: "center", marginBottom: "1rem" }}>
-          <h2 style={{ ...secTitle, margin: 0, flex: 1 }}>Containers</h2>
-          {/* Count summary */}
+      <section className="bg-surface border border-border rounded-lg px-5 py-4">
+        <div className="flex items-center mb-4">
+          <h2 className={cn(secTitle, "m-0 flex-1")}>Containers</h2>
           {!cLoading && containers && (
-            <span style={{ fontSize: 11, fontFamily: "var(--font-mono)", color: "var(--text-3)", marginRight: 12 }}>
-              <span style={{ color: "var(--green)" }}>{runningCount}</span> running
+            <span className="text-xs font-mono text-text-3 mr-3">
+                <span className="text-green">{runningCount}</span> running
               {" / "}
-              <span style={{ color: "var(--text-2)" }}>{totalCount}</span> total
+              <span className="text-text-2">{totalCount}</span> total
             </span>
           )}
           <button
             onClick={() => setGroupByCompose((v) => !v)}
-            style={{ fontSize: 11, padding: "4px 10px", borderRadius: 4, border: `1px solid ${groupByCompose ? "var(--violet)" : "var(--border)"}`, background: groupByCompose ? "var(--violet-dim)" : "var(--surface-2)", color: groupByCompose ? "var(--violet)" : "var(--text-3)", cursor: "pointer", fontFamily: "var(--font-mono)", marginRight: 8 }}
+            className={cn(
+              "text-xs px-2.5 py-1 rounded border font-mono mr-2 cursor-pointer",
+              groupByCompose
+                ? "border-violet bg-violet-dim text-violet"
+                : "border-border bg-surface-2 text-text-3"
+            )}
           >
             Compose
           </button>
           <button
             onClick={() => qc.invalidateQueries({ queryKey: ["containers"] })}
             disabled={isFetching}
-            style={{ fontSize: 11, padding: "4px 12px", borderRadius: 4, border: "1px solid var(--border)", background: "var(--surface-2)", color: isFetching ? "var(--text-3)" : "var(--text-2)", cursor: isFetching ? "not-allowed" : "pointer", fontFamily: "var(--font-mono)" }}
+            className={cn(
+              "text-xs px-3 py-1 rounded border font-mono cursor-pointer",
+              isFetching
+                ? "border-border bg-surface-2 text-text-3 cursor-not-allowed"
+                : "border-border bg-surface-2 text-text-2"
+            )}
           >
             {isFetching ? "…" : "↻ Refresh"}
           </button>
         </div>
 
-        {cLoading && <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>{[0,1,2].map(i => <Skeleton key={i} height={36} />)}</div>}
-        {cError && <p style={{ color: "var(--error)", fontSize: 13 }}>Docker unavailable — is the daemon running?</p>}
-        {containers && containers.length === 0 && <p style={{ color: "var(--text-3)", fontSize: 13 }}>No containers found.</p>}
+        {cLoading && <div className="flex flex-col gap-2.5">{[0,1,2].map(i => <Skeleton key={i} height={36} />)}</div>}
+        {cError && <p className="text-error text-sm">Docker unavailable — is the daemon running?</p>}
+        {containers && containers.length === 0 && <p className="text-text-3 text-sm">No containers found.</p>}
         {containers && containers.length > 0 && !groupByCompose && (
-          <table style={{ width: "100%", borderCollapse: "collapse" }}>
+          <table className="w-full border-collapse">
             <thead>
-              <tr style={{ borderBottom: "1px solid var(--border)" }}>
+              <tr className="border-b border-border">
                 {["Name", "Image", "Status", "Actions"].map(h => (
-                  <th key={h} style={{ textAlign: "left", padding: "6px 12px", fontSize: 10, fontFamily: "var(--font-mono)", textTransform: "uppercase", letterSpacing: "0.8px", color: "var(--text-3)" }}>{h}</th>
+                  <th key={h} className="text-left py-1.5 px-3 text-[10px] font-mono uppercase tracking-wider text-text-3">{h}</th>
                 ))}
               </tr>
             </thead>
@@ -182,15 +205,15 @@ export function Dashboard() {
 
       {/* Recent Events */}
       {events.length > 0 && (
-        <section style={card}>
-          <h2 style={secTitle}>Recent Events</h2>
-          <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+        <section className="bg-surface border border-border rounded-lg px-5 py-4">
+          <h2 className={secTitle}>Recent Events</h2>
+          <div className="flex flex-col gap-1">
             {events.map((ev) => (
-              <div key={`${ev.time}-${ev.actor}-${ev.action}`} style={{ display: "flex", gap: 10, fontSize: 12, fontFamily: "var(--font-mono)", alignItems: "center" }}>
-                <span style={{ color: "var(--text-3)", fontSize: 10, flexShrink: 0 }}>{new Date(ev.time * 1000).toLocaleTimeString()}</span>
-                <span style={{ color: "var(--orange)" }}>{ev.kind}</span>
-                <span style={{ color: "var(--green)" }}>{ev.action}</span>
-                <span style={{ color: "var(--text-2)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{ev.actor}</span>
+              <div key={`${ev.time}-${ev.actor}-${ev.action}`} className="flex gap-2.5 text-xs font-mono items-center">
+                <span className="text-text-3 text-[10px] flex-shrink-0">{new Date(ev.time * 1000).toLocaleTimeString()}</span>
+                <span className="text-orange">{ev.kind}</span>
+                <span className="text-green">{ev.action}</span>
+                <span className="text-text-2 overflow-hidden text-ellipsis whitespace-nowrap">{ev.actor}</span>
               </div>
             ))}
           </div>
@@ -199,19 +222,19 @@ export function Dashboard() {
 
       {/* Network Topology summary */}
       {networks && networks.length > 0 && (
-        <section style={card}>
-          <div style={{ display: "flex", alignItems: "center", marginBottom: "1rem" }}>
-            <h2 style={{ ...secTitle, margin: 0, flex: 1 }}>Network Topology</h2>
-            <Link to="/network" style={{ fontSize: 11, color: "var(--green)", fontFamily: "var(--font-mono)", textDecoration: "none" }}>View all →</Link>
+        <section className="bg-surface border border-border rounded-lg px-5 py-4">
+          <div className="flex items-center mb-4">
+            <h2 className={cn(secTitle, "m-0 flex-1")}>Network Topology</h2>
+            <Link to="/network" className="text-xs text-green font-mono no-underline">View all →</Link>
           </div>
-          <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+          <div className="flex flex-col gap-2">
             {networks.map(net => (
-              <div key={net.id} style={{ display: "flex", alignItems: "center", gap: 12 }}>
-                <span style={{ fontSize: 12, fontFamily: "var(--font-mono)", color: "var(--violet)", minWidth: 120 }}>{net.name}</span>
-                <span style={{ fontSize: 10, color: "var(--text-3)", fontFamily: "var(--font-mono)" }}>{net.driver}</span>
-                <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+              <div key={net.id} className="flex items-center gap-3">
+                <span className="text-sm font-mono text-violet min-w-[120px]">{net.name}</span>
+                <span className="text-xs text-text-3 font-mono">{net.driver}</span>
+                <div className="flex gap-1.5 flex-wrap">
                   {net.containers.map(c => (
-                    <span key={c.name} style={{ fontSize: 11, padding: "2px 8px", borderRadius: 9999, background: "var(--surface-2)", color: "var(--text-2)", border: "1px solid var(--border-hi)", fontFamily: "var(--font-mono)" }}>{c.name}</span>
+                    <span key={c.name} className="text-xs px-2 py-0.5 rounded-full bg-surface-2 text-text-2 border border-border-hi font-mono">{c.name}</span>
                   ))}
                 </div>
               </div>
@@ -220,17 +243,17 @@ export function Dashboard() {
         </section>
       )}
 
-      {detailsId && <ContainerDetailsModal containerId={detailsId} onClose={() => setDetailsId(null)} />}
+      {detailsId && <ContainerDetailsModal containerId={detailsId} onClose={closeDetails} />}
     </div>
   );
 }
 
 function StatItem({ label, value, pct, max }: { label: string; value: string; pct: number; max: number }) {
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-      <div style={{ display: "flex", justifyContent: "space-between" }}>
-        <span style={{ fontSize: 11, color: "var(--text-3)", fontFamily: "var(--font-mono)", textTransform: "uppercase", letterSpacing: "0.8px" }}>{label}</span>
-        <span style={{ fontSize: 12, color: "var(--text-2)", fontFamily: "var(--font-mono)" }}>{value}</span>
+    <div className="flex flex-col gap-1.5">
+      <div className="flex justify-between">
+        <span className="text-xs text-text-3 font-mono uppercase tracking-wider">{label}</span>
+        <span className="text-sm text-text-2 font-mono">{value}</span>
       </div>
       <ProgressBar value={pct} max={max} />
     </div>
@@ -265,22 +288,25 @@ function ComposeGroupedView({ containers, onStart, onStop, onRestart, onDetails 
   }
 
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+    <div className="flex flex-col gap-3">
       {Object.entries(groups).map(([project, items]) => {
         const isCollapsed = collapsed.has(project);
         const label = project === "__standalone__" ? "Standalone" : project;
         return (
-          <div key={project} style={{ border: "1px solid var(--border-light)", borderRadius: 6, overflow: "hidden" }}>
+          <div key={project} className="border border-border-light rounded-lg overflow-hidden">
             <button
               onClick={() => toggleGroup(project)}
-              style={{ width: "100%", display: "flex", alignItems: "center", gap: 8, padding: "8px 12px", background: "var(--surface-hi)", border: "none", cursor: "pointer", textAlign: "left" }}
+              className="w-full flex items-center gap-2 px-3 py-2 bg-surface-hi border-none cursor-pointer text-left"
             >
-              <span style={{ fontSize: 10, color: "var(--text-3)" }}>{isCollapsed ? "▶" : "▼"}</span>
-              <span style={{ fontSize: 12, fontWeight: 600, color: project === "__standalone__" ? "var(--text-3)" : "var(--violet)", fontFamily: "var(--font-mono)" }}>{label}</span>
-              <span style={{ fontSize: 10, color: "var(--text-3)", fontFamily: "var(--font-mono)" }}>({items.length})</span>
+              <span className="text-xs text-text-3">{isCollapsed ? "▶" : "▼"}</span>
+              <span className={cn(
+                "text-sm font-semibold font-mono",
+                project === "__standalone__" ? "text-text-3" : "text-violet"
+              )}>{label}</span>
+              <span className="text-xs text-text-3 font-mono">({items.length})</span>
             </button>
             {!isCollapsed && (
-              <table style={{ width: "100%", borderCollapse: "collapse" }}>
+              <table className="w-full border-collapse">
                 <tbody>
                   {items.map((c) => (
                     <ContainerRow key={c.id} c={c}
@@ -300,5 +326,4 @@ function ComposeGroupedView({ containers, onStart, onStop, onRestart, onDetails 
   );
 }
 
-const card: React.CSSProperties = { background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 8, padding: "1rem 1.25rem" };
-const secTitle: React.CSSProperties = { fontSize: 11, fontFamily: "var(--font-mono)", textTransform: "uppercase", letterSpacing: "1.2px", color: "var(--text-3)", margin: "0 0 1rem 0" };
+const secTitle = "text-[11px] font-mono uppercase tracking-widest text-text-3 mb-4";

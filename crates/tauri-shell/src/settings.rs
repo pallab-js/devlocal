@@ -26,6 +26,16 @@ pub async fn get_app_info(app: tauri::AppHandle) -> Result<AppInfo> {
 pub async fn test_docker_connection(socket_path: Option<String>) -> Result<String> {
     let docker = match socket_path {
         Some(ref path) if !path.is_empty() => {
+            if !path.ends_with(".sock") {
+                return Err(crate::error::AppError::Generic(
+                    "Socket path must end with .sock".to_string(),
+                ));
+            }
+            if path.contains("..") {
+                return Err(crate::error::AppError::Generic(
+                    "Socket path must not contain '..'".to_string(),
+                ));
+            }
             Docker::connect_with_socket(path, 30, bollard::API_DEFAULT_VERSION)?
         }
         _ => Docker::connect_with_local_defaults()?,

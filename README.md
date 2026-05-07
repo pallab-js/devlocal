@@ -70,19 +70,22 @@ Produces a native installer in `src-tauri/target/release/bundle/`.
 
 ```bash
 # Frontend unit tests
-pnpm test
+pnpm --filter @devopslocal/desktop test
 
 # Frontend tests in watch mode
-pnpm test:watch
+pnpm --filter @devopslocal/desktop test:watch
 
-# TypeScript type check
-pnpm lint
+# TypeScript type check + lint
+pnpm --filter @devopslocal/desktop lint
 
 # Rust unit tests
-cd src-tauri && cargo test
+cargo test --workspace
 
 # Rust lints
-cd src-tauri && cargo clippy
+cargo clippy --workspace -- -D warnings
+
+# Rust security audit
+cargo audit
 ```
 
 ---
@@ -91,23 +94,22 @@ cd src-tauri && cargo clippy
 
 ```
 devopslocal/
-├── src/                    # React frontend
-│   ├── pages/              # Dashboard, Environments, Logs, Network, Settings
-│   ├── components/         # Shared UI components
+├── packages/
+│   └── desktop/            # Tauri app entry point
+│       └── src-tauri/      # Tauri config, capabilities, icons
+├── crates/
+│   ├── tauri-shell/        # Tauri commands (IPC layer)
+│   ├── db/                 # SQLx: env var CRUD, settings, migrations
+│   └── docker-ops/         # bollard: containers, stats, logs, events, networks
+├── src/                    # React frontend (symlinked into packages/desktop)
+│   ├── pages/              # Dashboard, Environments, Logs, Network, Settings, Volumes
+│   ├── components/         # Shared UI components + ErrorBoundary
 │   ├── hooks/              # TanStack Query hooks
-│   ├── store/              # Zustand slices
 │   ├── lib/
 │   │   └── ipc.ts          # Typed Tauri IPC wrappers
 │   └── styles/             # CSS design tokens
-├── src-tauri/              # Rust backend
-│   ├── src/
-│   │   ├── docker/         # bollard: containers, stats, logs, events, networks
-│   │   ├── db/             # SQLx: env var CRUD + migrations
-│   │   └── settings/       # App info, Docker connection test
-│   ├── migrations/         # SQLite migration files
-│   └── tauri.conf.json
 └── .github/
-    └── workflows/ci.yml    # CI pipeline
+    └── workflows/ci.yml    # Lint → test → audit → build pipeline
 ```
 
 ---
@@ -124,6 +126,13 @@ React UI  ──invoke──▶  Tauri Commands  ──▶  Rust Modules  ──
 - **No Electron** — Tauri produces a ~10 MB binary vs ~150 MB for Electron.
 
 ---
+
+## Security
+
+- Sensitive env var values (keys matching `secret`, `password`, `token`, etc.) are stored in the OS keychain, not in SQLite.
+- The auto-updater verifies update signatures — set `plugins.updater.pubkey` in `tauri.conf.json` before shipping (run `tauri signer generate`).
+- All SQL queries use parameterized binds (no injection risk).
+- Env var keys are validated server-side: alphanumeric + underscore, must start with a letter or underscore.
 
 ## Contributing
 

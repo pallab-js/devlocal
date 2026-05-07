@@ -73,6 +73,22 @@ pub fn validate_scope(scope: &str) -> Result<(), String> {
     }
 }
 
+/// Security 1.4.3: validate env var key server-side
+pub fn validate_key(key: &str) -> Result<(), String> {
+    if key.is_empty() {
+        return Err("Key is required".into());
+    }
+    let mut chars = key.chars();
+    let first = chars.next().unwrap();
+    if !first.is_ascii_alphabetic() && first != '_' {
+        return Err("Key must start with a letter or underscore".into());
+    }
+    if !key.chars().all(|c| c.is_ascii_alphanumeric() || c == '_') {
+        return Err("Key must contain only letters, digits, and underscores".into());
+    }
+    Ok(())
+}
+
 #[derive(Debug, Serialize, Deserialize, sqlx::FromRow, PartialEq, TS)]
 #[ts(export, export_to = "../../packages/shared/types/")]
 pub struct EnvVar {
@@ -114,6 +130,9 @@ pub async fn import_env_file_inner(
             let key = k.trim().to_string();
             let value = v.trim().trim_matches('"').trim_matches('\'').to_string();
             if key.is_empty() {
+                continue;
+            }
+            if validate_key(&key).is_err() {
                 continue;
             }
             sqlx::query(

@@ -1,5 +1,6 @@
-import { useState, useRef } from "react";
+import { useState, useRef, useCallback } from "react";
 import { useEnvVars, useEnvVarMutations } from "../hooks/useQueries";
+import { useModalClose } from "../hooks/useModalClose";
 import { useToast } from "../components/Toast";
 import { ipc } from "../lib/ipc";
 import { Skeleton } from "../components/Skeleton";
@@ -22,6 +23,11 @@ export function Environments() {
 
   const { data: vars, isLoading } = useEnvVars(scope);
   const { upsert, remove } = useEnvVarMutations();
+
+  const closeEditModal = useCallback(() => { setEditing(null); setFormError(""); }, []);
+  useModalClose(closeEditModal);
+  const closeDeleteModal = useCallback(() => setConfirmDelete(null), []);
+  useModalClose(closeDeleteModal);
 
   // Auto-mask sensitive keys on load
   function toggleMask(id: number) {
@@ -206,7 +212,7 @@ export function Environments() {
           )}
           <button type="submit" style={submitBtn} disabled={upsert.isPending}>{editing ? "Update" : "Add"}</button>
           {editing && (
-            <button type="button" onClick={() => { setEditing(null); setFormError(""); }} style={{ ...submitBtn, background: "var(--surface-2)", color: "var(--text-3)", borderColor: "var(--border)" }}>Cancel</button>
+            <button type="button" onClick={closeEditModal} style={{ ...submitBtn, background: "var(--surface-2)", color: "var(--text-3)", borderColor: "var(--border)" }}>Cancel</button>
           )}
         </div>
         {formError && <p style={{ color: "var(--error)", fontSize: 12, margin: 0 }}>{formError}</p>}
@@ -275,15 +281,15 @@ export function Environments() {
 
       {/* Delete confirmation */}
       {confirmDelete && (
-        <div onClick={() => setConfirmDelete(null)} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.6)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 100 }}>
+        <div onClick={closeDeleteModal} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.6)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 100 }}>
           <div onClick={(e) => e.stopPropagation()} style={{ background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 10, padding: "1.5rem", width: 360 }}>
             <p style={{ color: "var(--text)", fontSize: 14, fontWeight: 600, margin: "0 0 8px" }}>Delete variable?</p>
             <p style={{ color: "var(--text-3)", fontSize: 13, margin: "0 0 1.25rem" }}>
               <code style={{ color: "var(--green)", fontFamily: "var(--font-mono)" }}>{confirmDelete.key}</code> in <em>{confirmDelete.scope}</em> will be permanently deleted.
             </p>
             <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
-              <button onClick={() => setConfirmDelete(null)} style={{ padding: "6px 14px", borderRadius: 4, border: "1px solid var(--border)", background: "var(--surface-2)", color: "var(--text-2)", cursor: "pointer", fontSize: 12 }}>Cancel</button>
-              <button onClick={() => { remove.mutate(confirmDelete.id); setConfirmDelete(null); }} style={{ padding: "6px 14px", borderRadius: 4, border: "1px solid var(--error)", background: "var(--error-dim)", color: "var(--error)", cursor: "pointer", fontSize: 12, fontWeight: 600 }}>Delete</button>
+              <button onClick={closeDeleteModal} style={{ padding: "6px 14px", borderRadius: 4, border: "1px solid var(--border)", background: "var(--surface-2)", color: "var(--text-2)", cursor: "pointer", fontSize: 12 }}>Cancel</button>
+              <button onClick={() => { remove.mutate({ id: confirmDelete.id, scope: confirmDelete.scope }); setConfirmDelete(null); }} style={{ padding: "6px 14px", borderRadius: 4, border: "1px solid var(--error)", background: "var(--error-dim)", color: "var(--error)", cursor: "pointer", fontSize: 12, fontWeight: 600 }}>Delete</button>
             </div>
           </div>
         </div>

@@ -5,6 +5,10 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import App from "./App";
 import "./styles/tokens.css";
 
+window.addEventListener("unhandledrejection", (event) => {
+  console.error("Unhandled promise rejection:", event.reason);
+});
+
 const queryClient = new QueryClient({
   defaultOptions: { queries: { retry: 1, staleTime: 2000 } },
 });

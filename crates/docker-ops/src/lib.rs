@@ -384,18 +384,22 @@ pub async fn inspect_network(docker: &Docker, id: &str) -> Result<NetworkInfo, D
 }
 
 pub async fn get_container_stats(docker: &Docker, id: &str) -> Result<ContainerStats, DockerError> {
-    let stats = docker
-        .stats(
-            id,
-            Some(StatsOptions {
-                stream: false,
-                one_shot: true,
-            }),
-        )
-        .next()
-        .await
-        .ok_or_else(|| DockerError::Other(format!("No stats for container {id}")))?
-        .map_err(|e| DockerError::Bollard(e))?;
+    let stats = tokio::time::timeout(
+        std::time::Duration::from_secs(10),
+        docker
+            .stats(
+                id,
+                Some(StatsOptions {
+                    stream: false,
+                    one_shot: true,
+                }),
+            )
+            .next(),
+    )
+    .await
+    .map_err(|_| DockerError::Other("Stats request timed out".into()))?
+    .ok_or_else(|| DockerError::Other(format!("No stats for container {id}")))?
+    .map_err(DockerError::Bollard)?;
 
     let cpu_delta = stats
         .cpu_stats

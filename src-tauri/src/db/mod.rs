@@ -3,6 +3,12 @@ use sqlx::{sqlite::SqlitePoolOptions, SqlitePool};
 use std::sync::OnceLock;
 use tauri::Manager;
 
+#[derive(Debug, Serialize)]
+pub struct DbPoolStats {
+    pub size: u32,
+    pub idle: u32,
+}
+
 static POOL: OnceLock<SqlitePool> = OnceLock::new();
 
 const KEYRING_SERVICE: &str = "devopslocal";
@@ -65,6 +71,22 @@ fn validate_scope(scope: &str) -> Result<(), String> {
     }
 }
 
+/// Security 1.4.3: validate env var key server-side
+fn validate_key(key: &str) -> Result<(), String> {
+    if key.is_empty() {
+        return Err("Key is required".into());
+    }
+    let mut chars = key.chars();
+    let first = chars.next().unwrap();
+    if !first.is_ascii_alphabetic() && first != '_' {
+        return Err("Key must start with a letter or underscore".into());
+    }
+    if !key.chars().all(|c| c.is_ascii_alphanumeric() || c == '_') {
+        return Err("Key must contain only letters, digits, and underscores".into());
+    }
+    Ok(())
+}
+
 #[derive(Debug, Serialize, Deserialize, sqlx::FromRow, PartialEq)]
 pub struct EnvVar {
     pub id: i64,
@@ -98,6 +120,7 @@ pub async fn list_env_vars(scope: Option<String>) -> Result<Vec<EnvVar>, String>
 #[tauri::command]
 pub async fn upsert_env_var(key: String, value: String, scope: String) -> Result<EnvVar, String> {
     validate_scope(&scope)?;
+    validate_key(&key)?;
     let pool = pool()?;
 
     // Security 2.3: store sensitive values in OS keychain
@@ -131,10 +154,12 @@ pub async fn upsert_env_var(key: String, value: String, scope: String) -> Result
 }
 
 #[tauri::command]
-pub async fn delete_env_var(id: i64) -> Result<(), String> {
+pub async fn delete_env_var(id: i64, scope: String) -> Result<(), String> {
+    validate_scope(&scope)?;
     let pool = pool()?;
-    sqlx::query("DELETE FROM env_vars WHERE id = ?")
+    sqlx::query("DELETE FROM env_vars WHERE id = ? AND scope = ?")
         .bind(id)
+        .bind(&scope)
         .execute(pool)
         .await
         .map_err(|e| e.to_string())?;
@@ -159,6 +184,9 @@ pub async fn import_env_file_inner(
             let value = v.trim().trim_matches('"').trim_matches('\'').to_string();
             if key.is_empty() {
                 continue;
+            }
+            if validate_key(&key).is_err() {
+                continue; // skip invalid keys silently
             }
             sqlx::query(
                 "INSERT INTO env_vars (key, value, scope) VALUES (?, ?, ?)
@@ -215,6 +243,19 @@ pub async fn export_env_scope(scope: String) -> Result<String, String> {
 #[tauri::command]
 pub async fn clear_all_env_vars() -> Result<u64, String> {
     let pool = pool()?;
+    // Clean up keychain entries for sensitive vars before deleting DB rows
+    let sensitive: Vec<(String, String)> = sqlx::query_as(
+        "SELECT key, scope FROM env_vars WHERE value = '__keychain__'",
+    )
+    .fetch_all(pool)
+    .await
+    .map_err(|e| e.to_string())?;
+    for (key, scope) in sensitive {
+        let keyring_key = format!("{scope}:{key}");
+        if let Ok(entry) = keyring::Entry::new(KEYRING_SERVICE, &keyring_key) {
+            let _ = entry.delete_credential();
+        }
+    }
     let result = sqlx::query("DELETE FROM env_vars")
         .execute(pool)
         .await
@@ -236,6 +277,10 @@ pub async fn get_setting(key: String) -> Result<Option<String>, String> {
 
 #[tauri::command]
 pub async fn set_setting(key: String, value: String) -> Result<(), String> {
+    const ALLOWED_SETTINGS: &[&str] = &["poll_containers", "poll_stats", "docker_socket"];
+    if !ALLOWED_SETTINGS.contains(&key.as_str()) {
+        return Err(format!("Unknown setting key: {key}"));
+    }
     let pool = pool()?;
     sqlx::query(
         "INSERT INTO settings (key, value) VALUES (?, ?)
@@ -247,6 +292,16 @@ pub async fn set_setting(key: String, value: String) -> Result<(), String> {
     .await
     .map_err(|e| e.to_string())?;
     Ok(())
+}
+
+/// 1.6.5: expose connection pool stats to the frontend
+#[tauri::command]
+pub async fn get_db_pool_stats() -> Result<DbPoolStats, String> {
+    let pool = pool()?;
+    Ok(DbPoolStats {
+        size: pool.size(),
+        idle: pool.num_idle() as u32,
+    })
 }
 
 // ── Unit tests ───────────────────────────────────────────────────────────────

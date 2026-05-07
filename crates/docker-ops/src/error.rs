@@ -15,7 +15,24 @@ pub enum DockerError {
 
 impl serde::Serialize for DockerError {
     fn serialize<S: serde::Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
-        s.serialize_str(&self.to_string())
+        let msg = match self {
+            DockerError::Bollard(e) => match e {
+                bollard::errors::Error::DockerResponseServerError {
+                    status_code,
+                    message,
+                } => {
+                    format!("Docker error {status_code}: {message}")
+                }
+                bollard::errors::Error::IOError { err } => {
+                    format!("Docker I/O error: {err}")
+                }
+                _ => "Docker connection error. Is the daemon running?".to_string(),
+            },
+            DockerError::NotFound(id) => format!("Container not found: {id}"),
+            DockerError::Mutex => "Internal lock error".to_string(),
+            DockerError::Other(msg) => msg.clone(),
+        };
+        s.serialize_str(&msg)
     }
 }
 
