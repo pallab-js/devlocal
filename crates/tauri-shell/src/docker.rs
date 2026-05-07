@@ -351,7 +351,10 @@ pub async fn compose_down(project_name: String, config_dir: String) -> Result<()
 }
 
 #[tauri::command]
-pub async fn inspect_volume(name: String, docker: State<'_, DockerState>) -> Result<serde_json::Value> {
+pub async fn inspect_volume(
+    name: String,
+    docker: State<'_, DockerState>,
+) -> Result<serde_json::Value> {
     let docker = require_docker(&docker)?;
     Ok(docker_ops::inspect_volume(&docker, &name).await?)
 }
