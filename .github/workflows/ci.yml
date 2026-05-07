@@ -26,10 +26,19 @@ jobs:
         run: pnpm install
 
       - name: TypeScript check
-        run: pnpm lint
+        run: pnpm --filter @devopslocal/desktop lint
 
-      - name: Frontend tests
-        run: pnpm test
+      - name: Frontend tests with coverage
+        run: pnpm --filter @devopslocal/desktop test -- --coverage
+
+      - name: Security audit (Node.js)
+        run: pnpm audit --audit-level=high
+
+      - name: Upload coverage results
+        uses: actions/upload-artifact@v4
+        with:
+          name: frontend-coverage
+          path: packages/desktop/coverage
 
       - name: Install Linux system deps
         run: |
@@ -40,21 +49,28 @@ jobs:
         with:
           components: rustfmt, clippy
 
+      - name: Install cargo-audit
+        run: cargo install cargo-audit
+
       - uses: Swatinem/rust-cache@v2
         with:
-          workspaces: src-tauri
+          workspaces: |
+            packages/desktop/src-tauri
+            crates/db
+            crates/docker-ops
+            crates/tauri-shell
 
       - name: Rust fmt
-        run: cargo fmt --check
-        working-directory: src-tauri
+        run: cargo fmt --all -- --check
 
       - name: Rust clippy
-        run: cargo clippy -- -D warnings
-        working-directory: src-tauri
+        run: cargo clippy --workspace -- -D warnings
+
+      - name: Rust security audit
+        run: cargo audit
 
       - name: Rust tests
-        run: cargo test
-        working-directory: src-tauri
+        run: cargo test --workspace
 
   build:
     name: Build (${{ matrix.platform }})
@@ -82,7 +98,11 @@ jobs:
 
       - uses: Swatinem/rust-cache@v2
         with:
-          workspaces: src-tauri
+          workspaces: |
+            packages/desktop/src-tauri
+            crates/db
+            crates/docker-ops
+            crates/tauri-shell
 
       - name: Install Linux deps
         if: matrix.platform == 'ubuntu-22.04'
@@ -102,3 +122,4 @@ jobs:
           releaseBody: "See CHANGELOG for details."
           releaseDraft: true
           prerelease: false
+          projectPath: packages/desktop
