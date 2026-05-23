@@ -4,9 +4,9 @@
   "version": "0.2.0",
   "identifier": "com.pallabpc.devopslocal",
   "build": {
-    "beforeDevCommand": "pnpm dev",
+    "beforeDevCommand": "pnpm --filter @devopslocal/desktop dev",
     "devUrl": "http://localhost:1420",
-    "beforeBuildCommand": "pnpm build",
+    "beforeBuildCommand": "pnpm --filter @devopslocal/desktop build",
     "frontendDist": "../dist"
   },
   "app": {
