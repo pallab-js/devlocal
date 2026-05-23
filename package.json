@@ -4,10 +4,15 @@
   "version": "0.1.0",
   "type": "module",
   "scripts": {
-    "dev":    "pnpm tauri dev",
-    "build":  "pnpm tauri build",
-    "test":   "pnpm --filter @devopslocal/desktop test",
-    "lint":   "pnpm --filter @devopslocal/desktop lint",
+    "dev": "pnpm tauri dev",
+    "build": "pnpm tauri build",
+    "test": "pnpm --filter @devopslocal/desktop test",
+    "lint": "pnpm --filter @devopslocal/desktop lint",
     "format": "pnpm --filter @devopslocal/desktop format"
+  },
+  "pnpm": {
+    "onlyBuiltDependencies": [
+      "esbuild"
+    ]
   }
 }
