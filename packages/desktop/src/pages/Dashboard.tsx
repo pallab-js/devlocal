@@ -96,13 +96,34 @@ export function Dashboard() {
 
   useEffect(() => {
     ipc.streamDockerEvents().catch(() => {});
-    const unlisten = listen<DockerEvent>("docker-event", (e) => {
-      setEvents((prev) => [e.payload, ...prev].slice(0, 20));
-      if (e.payload.kind === "network") {
-        qc.invalidateQueries({ queryKey: ["network-topology"] });
+    let active = true;
+    let unlistenFn: (() => void) | null = null;
+
+    listen<DockerEvent>("docker-event", (e) => {
+      if (active) {
+        setEvents((prev) => [e.payload, ...prev].slice(0, 20));
+        if (e.payload.kind === "network") {
+          qc.invalidateQueries({ queryKey: ["network-topology"] });
+        }
+      }
+    }).then((fn) => {
+      if (!active) {
+        fn();
+      } else {
+        unlistenFn = fn;
       }
     });
-    return () => { unlisten.then((fn) => fn()); };
+
+    return () => {
+      active = false;
+      if (unlistenFn) {
+        try {
+          unlistenFn();
+        } catch (e) {
+          console.error("Error unlistening docker-event:", e);
+        }
+      }
+    };
   }, [qc]);
 
   const { data: containers, isLoading: cLoading, error: cError, isFetching } = useContainers(paused);
@@ -110,15 +131,30 @@ export function Dashboard() {
   const { data: stats, isLoading: sLoading } = useHostStats(paused);
   const { data: networks } = useNetworkTopology();
 
-  async function handleComposeUp(projectName: string) {
+  async function getOrPickComposeDir(projectName: string): Promise<string | null> {
+    // Check if we have a saved directory for this project
+    const settingKey = `compose_dir__${projectName}`;
+    const saved = await ipc.getSetting(settingKey).catch(() => null);
+    if (saved) return saved;
+    // First time: ask the user to pick
     const selected = await open({
       directory: true,
       multiple: false,
-      title: `Select directory for ${projectName}`,
+      title: `Select docker-compose directory for "${projectName}"`,
     });
     if (selected && typeof selected === "string") {
+      // Persist so we never ask again for this project
+      await ipc.setSetting(settingKey, selected).catch(() => {});
+      return selected;
+    }
+    return null;
+  }
+
+  async function handleComposeUp(projectName: string) {
+    const dir = await getOrPickComposeDir(projectName);
+    if (dir) {
       try {
-        await ipc.composeUp(projectName, selected);
+        await ipc.composeUp(projectName, dir);
         qc.invalidateQueries({ queryKey: ["containers"] });
       } catch (e) {
         console.error(e);
@@ -127,18 +163,25 @@ export function Dashboard() {
   }
 
   async function handleComposeDown(projectName: string) {
-    const selected = await open({
-      directory: true,
-      multiple: false,
-      title: `Select directory for ${projectName}`,
-    });
-    if (selected && typeof selected === "string") {
+    const dir = await getOrPickComposeDir(projectName);
+    if (dir) {
       try {
-        await ipc.composeDown(projectName, selected);
+        await ipc.composeDown(projectName, dir);
         qc.invalidateQueries({ queryKey: ["containers"] });
       } catch (e) {
         console.error(e);
       }
+    }
+  }
+
+  async function handleChangeComposeDir(projectName: string) {
+    const selected = await open({
+      directory: true,
+      multiple: false,
+      title: `Change compose directory for "${projectName}"`,
+    });
+    if (selected && typeof selected === "string") {
+      await ipc.setSetting(`compose_dir__${projectName}`, selected).catch(() => {});
     }
   }
 
@@ -275,6 +318,7 @@ export function Dashboard() {
             onDetails={setDetailsId}
             onComposeUp={handleComposeUp}
             onComposeDown={handleComposeDown}
+            onChangeComposeDir={handleChangeComposeDir}
           />
         )}
       </section>
@@ -337,7 +381,7 @@ function StatItem({ label, value, pct, max }: { label: string; value: string; pc
 }
 
 function ComposeGroupedView({ 
-  containers, onStart, onStop, onRestart, onDetails, onComposeUp, onComposeDown 
+  containers, onStart, onStop, onRestart, onDetails, onComposeUp, onComposeDown, onChangeComposeDir 
 }: {
   containers: ContainerInfo[];
   onStart: (id: string) => void;
@@ -346,6 +390,7 @@ function ComposeGroupedView({
   onDetails: (id: string) => void;
   onComposeUp: (projectName: string) => void;
   onComposeDown: (projectName: string) => void;
+  onChangeComposeDir: (projectName: string) => void;
 }) {
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
   const parentRef = useRef<HTMLDivElement>(null);
@@ -425,9 +470,17 @@ function ComposeGroupedView({
                   </button>
                 </div>
                 {project !== "__standalone__" && (
-                  <div className="flex gap-2">
+                  <div className="flex gap-2 items-center">
                     <button onClick={() => onComposeUp(project)} className={btnGreen}>Start All</button>
                     <button onClick={() => onComposeDown(project)} className={btnOrange}>Stop All</button>
+                    <button
+                      onClick={() => onChangeComposeDir(project)}
+                      aria-label={`Change compose directory for ${project}`}
+                      title="Change directory"
+                      className="text-[10px] font-mono text-text-3 hover:text-text-2 border border-border hover:border-border-hi bg-surface px-2 py-0.5 rounded cursor-pointer transition-colors"
+                    >
+                      ⟳ dir
+                    </button>
                   </div>
                 )}
               </div>

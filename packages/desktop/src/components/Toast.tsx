@@ -1,12 +1,24 @@
 import { createContext, useCallback, useContext, useRef, useState } from "react";
+import { cn } from "../lib/cn";
 
 interface Toast { id: number; message: string; type: "success" | "error" | "info"; }
-
 interface ToastContextValue { toast: (message: string, type?: Toast["type"]) => void; dismiss: (id: number) => void; }
 
 const ToastContext = createContext<ToastContextValue>({ toast: () => {}, dismiss: () => {} });
 
 export function useToast() { return useContext(ToastContext); }
+
+const TOAST_COLORS: Record<Toast["type"], string> = {
+  success: "text-green bg-green-dim border-green-border",
+  error:   "text-error bg-error-dim border-error-border",
+  info:    "text-text-2 bg-surface-2 border-border",
+};
+
+const TOAST_ICONS: Record<Toast["type"], string> = {
+  success: "✓",
+  error:   "✕",
+  info:    "ℹ",
+};
 
 export function ToastProvider({ children }: { children: React.ReactNode }) {
   const [toasts, setToasts] = useState<Toast[]>([]);
@@ -25,37 +37,52 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
     const timer = setTimeout(() => {
       timers.current.delete(id);
       setToasts((prev) => prev.filter((t) => t.id !== id));
-    }, 4000);
+    }, 4500);
     timers.current.set(id, timer);
   }, []);
-
-  const COLOR: Record<Toast["type"], { color: string; bg: string; border: string }> = {
-    success: { color: "var(--green)", bg: "var(--green-dim)", border: "var(--green-border)" },
-    error:   { color: "var(--error)", bg: "var(--error-dim)", border: "rgba(255,180,171,0.3)" },
-    info:    { color: "var(--text-2)", bg: "var(--surface-2)", border: "var(--border)" },
-  };
 
   return (
     <ToastContext.Provider value={{ toast, dismiss }}>
       {children}
-      <div className="fixed bottom-6 right-6 flex flex-col gap-2 z-[9999] pointer-events-none">
-        {toasts.map((t) => {
-          const c = COLOR[t.type];
-          return (
-            <div key={t.id}
-              className="flex items-start gap-2 px-4 py-2.5 rounded-md text-[13px] font-mono shadow-[0_4px_12px_rgba(0,0,0,0.3)] animate-[toast-in_0.2s_ease] max-w-[360px] pointer-events-auto"
-              style={{ border: `1px solid ${c.border}`, background: c.bg, color: c.color }}>
-              <span className="flex-1">{t.message}</span>
-              <button onClick={() => dismiss(t.id)}
-                className="bg-none border-none cursor-pointer opacity-60 hover:opacity-100 shrink-0 leading-none"
-                style={{ background: "none", border: "none", color: "inherit", fontSize: 14, padding: 0, lineHeight: 1 }}>
-                &times;
-              </button>
-            </div>
-          );
-        })}
+      {/* Toast container: aria-live so screen readers announce new toasts */}
+      <div
+        className="fixed bottom-5 right-5 flex flex-col gap-2 z-[9999] pointer-events-none"
+        role="status"
+        aria-live="polite"
+        aria-label="Notifications"
+      >
+        {toasts.map((t) => (
+          <div
+            key={t.id}
+            className={cn(
+              "flex items-start gap-2.5 pl-3 pr-2 py-2.5 rounded-lg text-[13px] font-mono",
+              "shadow-[0_4px_16px_rgba(0,0,0,0.25)] border",
+              "max-w-[380px] pointer-events-auto",
+              "animate-toast-in",
+              TOAST_COLORS[t.type],
+            )}
+            role="alert"
+          >
+            {/* Icon */}
+            <span className="text-[12px] font-bold mt-0.5 shrink-0" aria-hidden="true">
+              {TOAST_ICONS[t.type]}
+            </span>
+            {/* Message */}
+            <span className="flex-1 leading-snug">{t.message}</span>
+            {/* Dismiss */}
+            <button
+              onClick={() => dismiss(t.id)}
+              aria-label="Dismiss notification"
+              className="bg-transparent border-none cursor-pointer opacity-50 hover:opacity-100 shrink-0 leading-none p-0.5 rounded transition-opacity"
+              style={{ color: "inherit" }}
+            >
+              <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M18 6 6 18" /><path d="m6 6 12 12" />
+              </svg>
+            </button>
+          </div>
+        ))}
       </div>
-      <style>{`@keyframes toast-in { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }`}</style>
     </ToastContext.Provider>
   );
 }

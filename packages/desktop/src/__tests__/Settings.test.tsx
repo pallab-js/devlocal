@@ -6,7 +6,6 @@ import { Settings } from "../pages/Settings";
 
 const mockInvoke = vi.hoisted(() => vi.fn());
 vi.mock("@tauri-apps/api/core", () => ({ invoke: mockInvoke }));
-vi.mock("@tauri-apps/plugin-updater", () => ({ check: vi.fn().mockResolvedValue(null) }));
 
 function wrapper(ui: React.ReactNode) {
   const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
@@ -38,11 +37,11 @@ describe("Settings", () => {
     expect(await screen.findByText(/Docker 24.0/)).toBeInTheDocument();
   });
 
-  it("Save intervals writes to localStorage", () => {
+  it("Save intervals invokes set_setting", async () => {
     render(wrapper(<Settings />));
     fireEvent.click(screen.getByText("Save intervals"));
-    expect(localStorage.getItem("poll_containers")).toBeTruthy();
-    expect(localStorage.getItem("poll_stats")).toBeTruthy();
+    expect(mockInvoke).toHaveBeenCalledWith("set_setting", { key: "poll_containers", value: "5000" });
+    expect(mockInvoke).toHaveBeenCalledWith("set_setting", { key: "poll_stats", value: "3000" });
   });
 
   it("Clear all shows confirm dialog; on confirm calls clear_all_env_vars", async () => {

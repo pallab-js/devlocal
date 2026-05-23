@@ -185,27 +185,57 @@ function PullModal({ onClose }: { onClose: () => void }) {
   const { pull } = useImageMutations();
 
   useEffect(() => {
-    const unlistenProgress = listen<PullProgress>("pull-progress", (e) => {
-      const p = e.payload;
-      if (p.id) {
-        setProgress(prev => ({ ...prev, [p.id!]: p }));
+    let active = true;
+    const cleanupFns: Array<() => void> = [];
+
+    const setup = async () => {
+      const u1 = await listen<PullProgress>("pull-progress", (e) => {
+        if (!active) return;
+        const p = e.payload;
+        if (p.id) {
+          setProgress(prev => ({ ...prev, [p.id!]: p }));
+        }
+      });
+      if (!active) {
+        u1();
+        return;
       }
-    });
+      cleanupFns.push(u1);
 
-    const unlistenError = listen<string>("pull-error", (e) => {
-      setError(e.payload);
-      setPulling(false);
-    });
+      const u2 = await listen<string>("pull-error", (e) => {
+        if (!active) return;
+        setError(e.payload);
+        setPulling(false);
+      });
+      if (!active) {
+        u2();
+        return;
+      }
+      cleanupFns.push(u2);
 
-    const unlistenFinished = listen<void>("pull-finished", () => {
-      setPulling(false);
-      onClose();
-    });
+      const u3 = await listen<void>("pull-finished", () => {
+        if (!active) return;
+        setPulling(false);
+        onClose();
+      });
+      if (!active) {
+        u3();
+        return;
+      }
+      cleanupFns.push(u3);
+    };
+
+    setup();
 
     return () => {
-      unlistenProgress.then(fn => fn());
-      unlistenError.then(fn => fn());
-      unlistenFinished.then(fn => fn());
+      active = false;
+      cleanupFns.forEach((fn) => {
+        try {
+          fn();
+        } catch (e) {
+          console.error("Error during image pull unlisten:", e);
+        }
+      });
     };
   }, [onClose]);
 

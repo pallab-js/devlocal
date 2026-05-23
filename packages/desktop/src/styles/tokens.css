@@ -1,5 +1,7 @@
 @import "tailwindcss";
 
+/* ── Fonts ───────────────────────────────────────────────────────────────── */
+
 @font-face {
   font-family: "Plus Jakarta Sans";
   font-style: normal;
@@ -15,6 +17,8 @@
   font-display: swap;
   src: url("/fonts/SpaceGrotesk.woff2") format("woff2");
 }
+
+/* ── Tailwind Theme Mapping ──────────────────────────────────────────────── */
 
 @theme {
   --color-bg: var(--bg);
@@ -33,13 +37,16 @@
   --color-orange: var(--orange);
   --color-violet: var(--violet);
   --color-error: var(--error);
+  --color-blue: var(--blue);
 
   --font-sans: "Plus Jakarta Sans", sans-serif;
   --font-mono: "Space Grotesk", monospace;
 }
 
-/* Light Theme (Default) */
+/* ── Light Theme (Default) ───────────────────────────────────────────────── */
+
 :root {
+  /* Backgrounds */
   --bg: #ffffff;
   --bg-deep: #f3f4f6;
   --surface: #ffffff;
@@ -47,22 +54,43 @@
   --surface-1: #f9fafb;
   --surface-2: #f3f4f6;
   --surface-3: #e5e7eb;
+
+  /* Borders */
   --border: #e5e7eb;
   --border-hi: #d1d5db;
   --border-light: #f3f4f6;
+
+  /* Semantic Colors */
   --green: #10b981;
+  --green-dim: rgba(16, 185, 129, 0.12);
+  --green-border: rgba(16, 185, 129, 0.35);
+
   --blue: #3b82f6;
   --blue-dim: rgba(59, 130, 246, 0.15);
+  --blue-border: rgba(59, 130, 246, 0.35);
+
+  --orange: #f97316;
+  --orange-dim: rgba(249, 115, 22, 0.12);
+  --orange-border: rgba(249, 115, 22, 0.35);
+
+  --violet: #8b5cf6;
+  --violet-dim: rgba(139, 92, 246, 0.12);
+  --violet-border: rgba(139, 92, 246, 0.35);
+
+  --error: #ef4444;
+  --error-dim: rgba(239, 68, 68, 0.1);
+  --error-border: rgba(239, 68, 68, 0.35);
+
+  /* Text */
   --text: #111827;
   --text-2: #4b5563;
   --text-3: #9ca3af;
-  --orange: #f97316;
-  --violet: #8b5cf6;
-  --error: #ef4444;
 }
 
-/* Dark Theme */
+/* ── Dark Theme ──────────────────────────────────────────────────────────── */
+
 .dark {
+  /* Backgrounds */
   --bg: #171717;
   --bg-deep: #0f0f0f;
   --surface: #131313;
@@ -70,21 +98,44 @@
   --surface-1: #1c1c1c;
   --surface-2: #202020;
   --surface-3: #2a2a2a;
+
+  /* Borders */
   --border: #2e2e2e;
   --border-hi: #363636;
   --border-light: #242424;
+
+  /* Semantic Colors */
   --green: #3ecf8e;
+  --green-dim: rgba(62, 207, 142, 0.12);
+  --green-border: rgba(62, 207, 142, 0.35);
+
   --blue: #60a5fa;
   --blue-dim: rgba(96, 165, 250, 0.15);
+  --blue-border: rgba(96, 165, 250, 0.35);
+
+  --orange: #ffa072;
+  --orange-dim: rgba(255, 160, 114, 0.12);
+  --orange-border: rgba(255, 160, 114, 0.35);
+
+  --violet: hsl(251, 63%, 63%);
+  --violet-dim: rgba(139, 92, 246, 0.12);
+  --violet-border: rgba(139, 92, 246, 0.35);
+
+  --error: #ffb4ab;
+  --error-dim: rgba(255, 180, 171, 0.1);
+  --error-border: rgba(255, 180, 171, 0.35);
+
+  /* Text */
   --text: #fafafa;
   --text-2: #b4b4b4;
   --text-3: #898989;
-  --orange: #ffa072;
-  --violet: hsl(251, 63.2%, 63.2%);
-  --error: #ffb4ab;
 }
 
-* {
+/* ── Global Resets ───────────────────────────────────────────────────────── */
+
+*,
+*::before,
+*::after {
   box-sizing: border-box;
 }
 
@@ -95,7 +146,23 @@ body {
   font-size: 14px;
   line-height: 1.6;
   margin: 0;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  text-rendering: optimizeLegibility;
 }
+
+button {
+  cursor: pointer;
+  font-family: inherit;
+}
+
+input,
+select,
+textarea {
+  font-family: inherit;
+}
+
+/* ── Scrollbars ──────────────────────────────────────────────────────────── */
 
 ::-webkit-scrollbar {
   width: 6px;
@@ -107,4 +174,71 @@ body {
 ::-webkit-scrollbar-thumb {
   background: var(--border-hi);
   border-radius: 3px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: var(--text-3);
+}
+
+/* ── Keyframe Animations ─────────────────────────────────────────────────── */
+
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.4; }
+}
+
+@keyframes spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+@keyframes toast-in {
+  from { opacity: 0; transform: translateY(8px) scale(0.97); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+@keyframes toast-out {
+  from { opacity: 1; transform: translateY(0) scale(1); }
+  to { opacity: 0; transform: translateY(4px) scale(0.97); }
+}
+
+@keyframes fade-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes slide-in-from-top {
+  from { transform: translateY(-6px); opacity: 0; }
+  to { transform: translateY(0); opacity: 1; }
+}
+
+@keyframes zoom-in {
+  from { transform: scale(0.95); opacity: 0; }
+  to { transform: scale(1); opacity: 1; }
+}
+
+@keyframes page-enter {
+  from { opacity: 0; transform: translateY(4px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+/* ── Utility Classes ─────────────────────────────────────────────────────── */
+
+.animate-toast-in {
+  animation: toast-in 0.22s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.animate-toast-out {
+  animation: toast-out 0.18s ease forwards;
+}
+
+.animate-page-enter {
+  animation: page-enter 0.2s ease;
+}
+
+.animate-pulse-dot {
+  animation: pulse 1.5s infinite;
+}
+
+.animate-spin {
+  animation: spin 0.7s linear infinite;
 }

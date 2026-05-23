@@ -7,6 +7,7 @@ import { useContainers } from "../hooks/useQueries";
 import { ipc } from "../lib/ipc";
 import { Skeleton } from "../components/Skeleton";
 import { useDebounce } from "../hooks/useDebounce";
+import { Button } from "../components/ui/Button";
 
 type Level = "ALL" | "DEBUG" | "INFO" | "WARN" | "ERROR";
 
@@ -40,8 +41,16 @@ const LEVEL_COLOR: Record<Level, string> = {
   ERROR: "var(--error)",
 };
 
+const LEVEL_ACTIVE: Record<Level, string> = {
+  ALL: "text-text-2 border-border-hi bg-surface-2",
+  DEBUG: "text-text-3 border-border-hi bg-surface-2",
+  INFO: "text-blue border-blue/40 bg-blue/10",
+  WARN: "text-orange border-orange/40 bg-orange/10",
+  ERROR: "text-error border-error/40 bg-error/10",
+};
+
 const TAIL_OPTIONS = [
-  { label: "50", value: 50 },
+  { label: "50",  value: 50 },
   { label: "100", value: 100 },
   { label: "500", value: 500 },
   { label: "All", value: 0 },
@@ -52,7 +61,7 @@ function formatTs(ts: string): string {
   try {
     return new Date(ts).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" });
   } catch {
-    return ts.slice(11, 19); // fallback: slice HH:MM:SS from ISO string
+    return ts.slice(11, 19);
   }
 }
 
@@ -65,7 +74,7 @@ function highlightText(text: string, query: string): React.ReactNode {
   const escaped = escapeRegex(query);
   const parts = text.split(new RegExp(`(${escaped})`, "gi"));
   return (<>{parts.map((part, i) => part.toLowerCase() === query.toLowerCase() ? (
-    <mark key={i} className="bg-yellow-500/40 text-yellow-200">{part}</mark>
+    <mark key={i} className="bg-yellow-500/40 text-yellow-200 rounded-[2px]">{part}</mark>
   ) : part)}</>);
 }
 
@@ -99,25 +108,41 @@ export function Logs() {
       ipc.stopLogs().catch(() => {});
       return;
     }
-
     selectedIds.forEach((id) => {
       ipc.streamLogs(id, tail).catch(() => {});
     });
+    let active = true;
+    let unlistenFn: (() => void) | null = null;
 
-    const unlisten = listen<RawLogPayload>("log-line", (event) => {
-      setStreaming(true);
-      idRef.current += 1;
-      const id = idRef.current;
-      const { container_id, ts, text } = event.payload;
-      setLines((prev) => [
-        ...prev.slice(-4999),
-        { id, ts, text, level: detectLevel(text), containerId: container_id },
-      ]);
+    listen<RawLogPayload>("log-line", (event) => {
+      if (active) {
+        setStreaming(true);
+        idRef.current += 1;
+        const id = idRef.current;
+        const { container_id, ts, text } = event.payload;
+        setLines((prev) => [
+          ...prev.slice(-4999),
+          { id, ts, text, level: detectLevel(text), containerId: container_id },
+        ]);
+      }
+    }).then((fn) => {
+      if (!active) {
+        fn();
+      } else {
+        unlistenFn = fn;
+      }
     });
 
     return () => {
+      active = false;
       setStreaming(false);
-      unlisten.then((fn) => fn());
+      if (unlistenFn) {
+        try {
+          unlistenFn();
+        } catch (e) {
+          console.error("Error unlistening log-line:", e);
+        }
+      }
       ipc.stopLogs().catch(() => {});
     };
   }, [selectedIds, tail]);
@@ -137,14 +162,12 @@ export function Logs() {
     overscan: 20,
   });
 
-  // Auto-scroll logic
   useEffect(() => {
     if (autoScroll && visible.length > 0) {
       rowVirtualizer.scrollToIndex(visible.length - 1, { behavior: "smooth" });
     }
   }, [visible.length, autoScroll, rowVirtualizer]);
 
-  // Detect manual scroll up → disable auto-scroll
   function handleScroll() {
     const el = scrollRef.current;
     if (!el) return;
@@ -161,15 +184,11 @@ export function Logs() {
 
   async function exportLogs() {
     if (visible.length === 0) return;
-
-    const name =
-      selectedIds.length === 1 ? containerNames[selectedIds[0]] : `${selectedIds.length}-containers`;
-
+    const name = selectedIds.length === 1 ? containerNames[selectedIds[0]] : `${selectedIds.length}-containers`;
     const path = await save({
       filters: [{ name: "Logs", extensions: ["log", "txt"] }],
       defaultPath: `${name}-logs.log`,
     });
-
     if (path) {
       const text = visible
         .map((l) => `${l.ts ? l.ts + " " : ""}[${containerNames[l.containerId] || "unknown"}] ${l.text}`)
@@ -178,44 +197,28 @@ export function Logs() {
     }
   }
 
-  const sel: React.CSSProperties = {
-    background: "var(--surface-2)",
-    border: "1px solid var(--border)",
-    borderRadius: 4,
-    padding: "5px 8px",
-    color: "var(--text)",
-    fontSize: 12,
-    fontFamily: "var(--font-mono)",
-    outline: "none",
-  };
-
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: "0.75rem", height: "100%" }}>
-      <h1 style={{ fontSize: 18, fontWeight: 700, color: "var(--text)", margin: 0 }}>Logs</h1>
+    <div className="flex flex-col gap-3 h-full">
+      <h1 className="text-[18px] font-bold text-text m-0">Logs</h1>
 
-      {/* Row 1: container + tail + streaming indicator */}
-      <div style={{ display: "flex", gap: 12, alignItems: "center", flexWrap: "wrap" }}>
+      {/* Row 1: container selector + tail + streaming indicator */}
+      <div className="flex gap-3 items-center flex-wrap">
         {cLoading ? (
           <Skeleton width={200} height={32} />
         ) : (
-          <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+          <div className="flex gap-1.5 flex-wrap">
             {containers?.map((c) => {
               const active = selectedIds.includes(c.id);
               return (
                 <button
                   key={c.id}
                   onClick={() => toggleContainer(c.id)}
-                  style={{
-                    fontSize: 10,
-                    padding: "4px 10px",
-                    borderRadius: 4,
-                    border: `1px solid ${active ? "var(--blue)" : "var(--border)"}`,
-                    background: active ? "var(--blue-dim)" : "var(--surface-1)",
-                    color: active ? "var(--blue)" : "var(--text-3)",
-                    cursor: "pointer",
-                    fontFamily: "var(--font-mono)",
-                    transition: "all 0.1s",
-                  }}
+                  aria-pressed={active}
+                  className={`text-[10px] px-2.5 py-1 rounded border font-mono transition-all cursor-pointer ${
+                    active
+                      ? "border-blue/50 bg-blue-dim text-blue"
+                      : "border-border bg-surface-2 text-text-3 hover:text-text-2 hover:bg-surface-3"
+                  }`}
                 >
                   {c.name}
                 </button>
@@ -224,110 +227,85 @@ export function Logs() {
           </div>
         )}
 
-        <div style={{ display: "flex", alignItems: "center", gap: 4, marginLeft: "auto" }}>
-          <span style={{ fontSize: 11, color: "var(--text-3)", fontFamily: "var(--font-mono)" }}>Tail</span>
-          <select value={tail} onChange={(e) => setTail(Number(e.target.value))} style={sel}>
+        <div className="flex items-center gap-1.5 ml-auto">
+          <span className="text-[11px] text-text-3 font-mono">Tail</span>
+          <select
+            value={tail}
+            onChange={(e) => setTail(Number(e.target.value))}
+            aria-label="Log tail count"
+            className="bg-surface-2 border border-border rounded px-2 py-1 text-[12px] text-text font-mono outline-none focus:border-green transition-colors"
+          >
             {TAIL_OPTIONS.map((o) => (
-              <option key={o.value} value={o.value}>
-                {o.label}
-              </option>
+              <option key={o.value} value={o.value}>{o.label}</option>
             ))}
           </select>
         </div>
 
         {selectedIds.length > 0 && (
-          <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+          <div className="flex items-center gap-2">
             <div
-              style={{
-                width: 7,
-                height: 7,
-                borderRadius: "50%",
-                background: streaming ? "var(--green)" : "var(--text-3)",
-                boxShadow: streaming ? "0 0 6px var(--green)" : "none",
-                animation: streaming ? "pulse 1.5s infinite" : "none",
-              }}
+              className={`w-2 h-2 rounded-full transition-colors ${
+                streaming ? "bg-green animate-pulse-dot shadow-[0_0_6px_var(--green)]" : "bg-text-3"
+              }`}
+              role="status"
+              aria-label={streaming ? "Log stream live" : "Connecting to log stream"}
             />
-            <span
-              style={{
-                fontSize: 11,
-                color: streaming ? "var(--green)" : "var(--text-3)",
-                fontFamily: "var(--font-mono)",
-              }}
-            >
+            <span className={`text-[11px] font-mono ${streaming ? "text-green" : "text-text-3"}`}>
               {streaming ? "live" : "connecting…"}
             </span>
           </div>
         )}
 
-        {/* Stop / Clear / Copy / Export */}
-        <div style={{ display: "flex", gap: 6 }}>
+        <div className="flex gap-1.5">
           {streaming && (
-            <button
-              onClick={() => {
-                ipc.stopLogs().catch(() => {});
-                setStreaming(false);
-              }}
-              style={iconBtn("var(--orange)", "var(--orange-dim)")}
+            <Button
+              onClick={() => { ipc.stopLogs().catch(() => {}); setStreaming(false); }}
+              variant="warning"
+              size="sm"
             >
               ■ Stop
-            </button>
+            </Button>
           )}
-          <button
-            onClick={() => setLines([])}
-            disabled={lines.length === 0}
-            style={iconBtn("var(--text-3)", "var(--surface-2)")}
-          >
+          <Button onClick={() => setLines([])} disabled={lines.length === 0} variant="ghost" size="sm">
             Clear
-          </button>
-          <button
-            onClick={copyToClipboard}
-            disabled={visible.length === 0}
-            style={iconBtn("var(--text-3)", "var(--surface-2)")}
-          >
+          </Button>
+          <Button onClick={copyToClipboard} disabled={visible.length === 0} variant="ghost" size="sm">
             Copy
-          </button>
-          <button
-            onClick={exportLogs}
-            disabled={visible.length === 0}
-            style={iconBtn("var(--text-3)", "var(--surface-2)")}
-          >
+          </Button>
+          <Button onClick={exportLogs} disabled={visible.length === 0} variant="ghost" size="sm">
             Export
-          </button>
+          </Button>
         </div>
       </div>
 
-      {/* Row 2: search + level filters + line count + auto-scroll toggle */}
-      <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+      {/* Row 2: search + level filters + count + auto-scroll */}
+      <div className="flex gap-2 items-center flex-wrap">
         <input
           value={search}
           onChange={(e) => setSearch(e.target.value)}
           placeholder="Search logs…"
-          style={{ ...sel, minWidth: 180, flex: 1 }}
+          aria-label="Search log output"
+          className="bg-surface-2 border border-border rounded px-2.5 py-1 text-[12px] text-text font-mono outline-none focus:border-green focus:ring-1 focus:ring-green/30 transition-colors placeholder:text-text-3 flex-1 min-w-[160px]"
         />
 
-        <div style={{ display: "flex", gap: 5 }}>
+        <div className="flex gap-1">
           {(["ALL", "DEBUG", "INFO", "WARN", "ERROR"] as Level[]).map((l) => (
             <button
               key={l}
               onClick={() => setFilter(l)}
-              style={{
-                fontSize: 10,
-                padding: "3px 9px",
-                borderRadius: 9999,
-                border: `1px solid ${filter === l ? LEVEL_COLOR[l] : "var(--border)"}`,
-                background: filter === l ? "var(--surface-2)" : "transparent",
-                color: filter === l ? LEVEL_COLOR[l] : "var(--text-3)",
-                cursor: "pointer",
-                fontFamily: "var(--font-mono)",
-                letterSpacing: "0.8px",
-              }}
+              aria-pressed={filter === l}
+              className={`text-[10px] px-2.5 py-1 rounded-full border font-mono cursor-pointer transition-colors ${
+                filter === l
+                  ? LEVEL_ACTIVE[l]
+                  : "border-border text-text-3 hover:text-text-2 hover:bg-surface-2"
+              }`}
             >
               {l}
             </button>
           ))}
         </div>
 
-        <span style={{ fontSize: 11, color: "var(--text-3)", fontFamily: "var(--font-mono)", whiteSpace: "nowrap" }}>
+        <span className="text-[11px] text-text-3 font-mono whitespace-nowrap">
           {visible.length} lines
         </span>
 
@@ -338,16 +316,12 @@ export function Logs() {
               rowVirtualizer.scrollToIndex(visible.length - 1, { behavior: "smooth" });
             }
           }}
-          style={{
-            fontSize: 10,
-            padding: "3px 9px",
-            borderRadius: 9999,
-            border: `1px solid ${autoScroll ? "var(--green-border)" : "var(--border)"}`,
-            background: autoScroll ? "var(--green-dim)" : "transparent",
-            color: autoScroll ? "var(--green)" : "var(--text-3)",
-            cursor: "pointer",
-            fontFamily: "var(--font-mono)",
-          }}
+          aria-pressed={autoScroll}
+          className={`text-[10px] px-2.5 py-1 rounded-full border font-mono cursor-pointer transition-colors ${
+            autoScroll
+              ? "border-green-border bg-green-dim text-green"
+              : "border-border text-text-3 hover:text-text-2"
+          }`}
         >
           ↓ Auto-scroll
         </button>
@@ -357,23 +331,16 @@ export function Logs() {
       <div
         ref={scrollRef}
         onScroll={handleScroll}
-        style={{
-          flex: 1,
-          background: "var(--bg-deep)",
-          border: "1px solid var(--border)",
-          borderRadius: 8,
-          padding: "0.75rem 1rem",
-          overflow: "auto",
-          fontFamily: "var(--font-mono)",
-          fontSize: 12,
-          lineHeight: 1.7,
-          minHeight: 300,
-          position: "relative",
-        }}
+        className="flex-1 bg-bg-deep border border-border rounded-lg p-3 overflow-auto font-mono text-[12px] leading-relaxed min-h-[300px] relative"
+        role="log"
+        aria-live="polite"
+        aria-label="Log output"
       >
-        {!selectedIds.length && <p style={{ color: "var(--text-3)" }}>Select containers to stream logs.</p>}
+        {!selectedIds.length && (
+          <p className="text-text-3">Select containers above to stream logs.</p>
+        )}
         {selectedIds.length > 0 && visible.length === 0 && lines.length > 0 && (
-          <p style={{ color: "var(--text-3)" }}>No lines match the current filter.</p>
+          <p className="text-text-3">No lines match the current filter.</p>
         )}
 
         {visible.length > 0 && (
@@ -395,17 +362,9 @@ export function Logs() {
                     wordBreak: "break-all",
                   }}
                 >
-                  <div style={{ display: "flex", gap: 8, flexShrink: 0, userSelect: "none" }}>
-                    {line.ts && <span style={{ color: "var(--text-3)" }}>{formatTs(line.ts)}</span>}
-                    <span
-                      style={{
-                        color: "var(--text-2)",
-                        background: "var(--surface-2)",
-                        padding: "0 4px",
-                        borderRadius: 2,
-                        fontSize: 10,
-                      }}
-                    >
+                  <div className="flex gap-2 shrink-0 select-none">
+                    {line.ts && <span className="text-text-3">{formatTs(line.ts)}</span>}
+                    <span className="text-text-2 bg-surface-2 px-1 rounded text-[10px]">
                       {containerNames[line.containerId] || "???"}
                     </span>
                   </div>
@@ -416,21 +375,6 @@ export function Logs() {
           </div>
         )}
       </div>
-
-      <style>{`@keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.4} }`}</style>
     </div>
   );
-}
-
-function iconBtn(color: string, bg: string): React.CSSProperties {
-  return {
-    fontSize: 11,
-    padding: "4px 10px",
-    borderRadius: 4,
-    border: `1px solid ${color === "var(--text-3)" ? "var(--border)" : color}`,
-    background: bg,
-    color,
-    cursor: "pointer",
-    fontFamily: "var(--font-mono)",
-  };
 }

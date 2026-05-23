@@ -29,7 +29,7 @@ describe("ContainerDetailsModal", () => {
     expect(screen.getByText("nginx -g daemon off;")).toBeInTheDocument();
   });
 
-  it("closes on × button click", async () => {
+  it("closes on close button click", async () => {
     mockInvoke.mockImplementation((cmd: string) => {
       if (cmd === "inspect_container") return Promise.resolve(details);
       if (cmd === "get_container_stats") return Promise.resolve({ cpu_percent: 0, mem_used_mb: 0, mem_limit_mb: 0 });
@@ -38,7 +38,7 @@ describe("ContainerDetailsModal", () => {
     const onClose = vi.fn();
     render(<ContainerDetailsModal containerId="abc" onClose={onClose} />);
     await screen.findByText("PATH=/usr/bin");
-    fireEvent.click(screen.getByText("×"));
+    fireEvent.click(screen.getByLabelText("Close dialog"));
     expect(onClose).toHaveBeenCalled();
   });
 
@@ -49,10 +49,10 @@ describe("ContainerDetailsModal", () => {
       return Promise.resolve(null);
     });
     const onClose = vi.fn();
-    const { container } = render(<ContainerDetailsModal containerId="abc" onClose={onClose} />);
+    render(<ContainerDetailsModal containerId="abc" onClose={onClose} />);
     await screen.findByText("PATH=/usr/bin");
-    // Click the backdrop (outermost div)
-    fireEvent.click(container.firstChild as Element);
+    // Click the backdrop (polled by data-testid)
+    fireEvent.click(screen.getByTestId("modal-backdrop"));
     expect(onClose).toHaveBeenCalled();
   });
 });

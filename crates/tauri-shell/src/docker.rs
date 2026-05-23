@@ -18,6 +18,8 @@ use tokio::task::JoinHandle;
 
 pub struct LogStreamState(pub Mutex<HashMap<String, JoinHandle<()>>>);
 pub struct EventStreamState(pub Mutex<Option<JoinHandle<()>>>);
+/// Tracks the active image pull task so we can cancel it before starting a new one.
+pub struct PullState(pub Mutex<Option<JoinHandle<()>>>);
 pub struct SysState(pub Mutex<System>);
 pub struct DiskState(pub Mutex<(Disks, Instant)>);
 pub struct DockerState(pub Option<Arc<Docker>>);
@@ -223,30 +225,38 @@ pub async fn stream_docker_events(
     let docker = require_docker(&docker)?;
     let docker_clone = Arc::clone(&docker);
     let handle = tokio::spawn(async move {
-        let mut stream = docker_clone.events(None::<EventsOptions<String>>);
-        while let Some(result) = stream.next().await {
-            match result {
-                Ok(event) => {
-                    let ev = DockerEvent {
-                        kind: event.typ.map(|t| t.to_string()).unwrap_or_default(),
-                        action: event.action.unwrap_or_default(),
-                        actor: event.actor.and_then(|a| a.id).unwrap_or_default(),
-                        time: event.time.unwrap_or(0),
-                    };
-                    let _ = app.emit("docker-event", ev);
-                }
-                Err(e) => {
-                    eprintln!("Docker event stream error: {e}");
-                    break;
+        // Outer reconnect loop — if Docker restarts we re-open the stream automatically.
+        let mut backoff_secs = 3u64;
+        loop {
+            let mut stream = docker_clone.events(None::<EventsOptions<String>>);
+            while let Some(result) = stream.next().await {
+                match result {
+                    Ok(event) => {
+                        backoff_secs = 3; // reset backoff on successful receive
+                        let ev = DockerEvent {
+                            kind: event.typ.map(|t| t.to_string()).unwrap_or_default(),
+                            action: event.action.unwrap_or_default(),
+                            actor: event.actor.and_then(|a| a.id).unwrap_or_default(),
+                            time: event.time.unwrap_or(0),
+                        };
+                        let _ = app.emit("docker-event", ev);
+                    }
+                    Err(e) => {
+                        eprintln!("Docker event stream error: {e} — reconnecting in {backoff_secs}s");
+                        break;
+                    }
                 }
             }
+            // Stream ended or errored; wait with backoff then reconnect
+            tokio::time::sleep(std::time::Duration::from_secs(backoff_secs)).await;
+            backoff_secs = (backoff_secs * 2).min(30);
         }
     });
 
     let mut guard = event_state
         .0
         .lock()
-        .map_err(|e| crate::error::AppError::Generic(e.to_string()))?;
+        .unwrap_or_else(|p| p.into_inner());
     if let Some(old) = guard.take() {
         old.abort();
     }
@@ -293,11 +303,7 @@ pub async fn list_images(docker: State<'_, DockerState>) -> Result<Vec<ImageInfo
     Ok(docker_ops::list_images(&docker).await?)
 }
 
-#[tauri::command]
-pub async fn remove_image(id: String, docker: State<'_, DockerState>) -> Result<()> {
-    let docker = require_docker(&docker)?;
-    Ok(docker_ops::remove_image(&docker, &id, false).await?)
-}
+// remove_image removed: superseded by delete_image which the frontend actually calls.
 
 #[tauri::command]
 pub async fn pull_image(
@@ -305,11 +311,20 @@ pub async fn pull_image(
     tag: String,
     app: AppHandle,
     docker: State<'_, DockerState>,
+    pull_state: State<'_, PullState>,
 ) -> Result<()> {
     let docker = require_docker(&docker)?;
     let docker_clone = Arc::clone(&docker);
 
-    tokio::spawn(async move {
+    // Cancel any in-progress pull before starting a new one
+    {
+        let mut guard = pull_state.0.lock().unwrap_or_else(|p| p.into_inner());
+        if let Some(old) = guard.take() {
+            old.abort();
+        }
+    }
+
+    let handle = tokio::spawn(async move {
         let mut stream = docker_ops::pull_image(&docker_clone, image, tag);
         while let Some(res) = stream.next().await {
             match res {
@@ -325,6 +340,8 @@ pub async fn pull_image(
         let _ = app.emit("pull-finished", ());
     });
 
+    let mut guard = pull_state.0.lock().unwrap_or_else(|p| p.into_inner());
+    *guard = Some(handle);
     Ok(())
 }
 
@@ -377,13 +394,17 @@ pub async fn prune_images(docker: State<'_, DockerState>) -> Result<u64> {
 
 pub fn start_health_monitor(app: AppHandle, docker: Arc<Docker>) {
     tokio::spawn(async move {
+        // Emit initial status immediately on startup — don't make the frontend wait 5s
+        let online = docker.ping().await.is_ok();
+        let _ = app.emit("app:dockerd-status", serde_json::json!({ "online": online }));
+
         loop {
+            tokio::time::sleep(std::time::Duration::from_secs(5)).await;
             let online = docker.ping().await.is_ok();
             let _ = app.emit(
                 "app:dockerd-status",
                 serde_json::json!({ "online": online }),
             );
-            tokio::time::sleep(std::time::Duration::from_secs(5)).await;
         }
     });
 }

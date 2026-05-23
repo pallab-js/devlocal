@@ -31,7 +31,7 @@ describe("Logs", () => {
   it("shows placeholder when no container selected", async () => {
     mockInvoke.mockResolvedValue([]);
     render(wrapper(<Logs />));
-    expect(await screen.findByText(/Select containers to stream logs/)).toBeInTheDocument();
+    expect(await screen.findByText(/Select containers.*to stream logs/)).toBeInTheDocument();
   });
 
   it("renders all level filter buttons", () => {

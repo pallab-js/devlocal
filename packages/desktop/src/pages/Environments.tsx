@@ -2,12 +2,15 @@ import { useState, useRef } from "react";
 import { useEnvVars, useEnvVarMutations } from "../hooks/useQueries";
 import { useToast } from "../components/Toast";
 import { ipc } from "../lib/ipc";
+import { open } from "@tauri-apps/plugin-dialog";
+import { readTextFile } from "@tauri-apps/plugin-fs";
 import { Skeleton } from "../components/Skeleton";
 import { useDebounce } from "../hooks/useDebounce";
 import type { EnvVar } from "../lib/ipc";
+import { Button } from "../components/ui/Button";
+import { ConfirmModal } from "../components/ui/Modal";
 
 const SCOPES = ["global", "development", "staging", "production"];
-
 const SENSITIVE_RE = /secret|password|token|key|pwd|pass|auth|credential/i;
 
 export function Environments() {
@@ -26,15 +29,10 @@ export function Environments() {
   const { data: vars, isLoading } = useEnvVars(scope);
   const { upsert, remove } = useEnvVarMutations();
 
-  // Auto-mask sensitive keys on load
   function toggleMask(id: bigint) {
-    setMasked(prev => {
+    setMasked((prev) => {
       const next = new Set(prev);
-      if (next.has(id)) {
-        next.delete(id);
-      } else {
-        next.add(id);
-      }
+      if (next.has(id)) next.delete(id); else next.add(id);
       return next;
     });
   }
@@ -46,7 +44,8 @@ export function Environments() {
   function validate(key: string): string {
     if (!key.trim()) return "Key is required.";
     if (/\s/.test(key)) return "Key must not contain spaces.";
-    if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(key)) return "Key must be alphanumeric/underscore, starting with a letter or underscore.";
+    if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(key))
+      return "Key must be alphanumeric/underscore, starting with a letter or underscore.";
     return "";
   }
 
@@ -54,14 +53,13 @@ export function Environments() {
     e.preventDefault();
     const key = editing ? editing.key : form.key;
     const value = editing ? editing.value : form.value;
-    // Fix: use editing.scope when editing, not form.scope
     const targetScope = editing ? editing.scope : form.scope;
     const err = validate(key);
     if (err) { setFormError(err); return; }
     setFormError("");
     upsert.mutate(
       { key, value, scope: targetScope },
-      { onSuccess: () => { setForm({ key: "", value: "", scope: "global" }); setEditing(null); } }
+      { onSuccess: () => { setForm({ key: "", value: "", scope: "global" }); setEditing(null); } },
     );
   }
 
@@ -75,45 +73,26 @@ export function Environments() {
     } catch (err) {
       toast(String(err), "error");
     }
-    // reset file input
     if (fileRef.current) fileRef.current.value = "";
   }
 
   async function handleImportSecrets(format: "docker" | "kubernetes") {
     try {
-      const { open } = await import("@tauri-apps/plugin-dialog");
       const path = await open({
         multiple: false,
-        filters: [
-          {
-            name: format === "kubernetes" ? "YAML" : "Docker Secret/Env",
-            extensions: format === "kubernetes" ? ["yaml", "yml"] : ["*", "env"],
-          },
-        ],
+        filters: [{
+          name: format === "kubernetes" ? "YAML" : "Docker Secret/Env",
+          extensions: format === "kubernetes" ? ["yaml", "yml"] : ["*", "env"],
+        }],
       });
       if (!path || Array.isArray(path)) return;
-
-      const { readTextFile } = await import("@tauri-apps/plugin-fs");
       const content = await readTextFile(path);
-
       const count = await ipc.importSecrets(content, format, scope);
-      toast(
-        `Imported ${count} variable(s) from ${format} file into "${scope}".`,
-        "success"
-      );
+      toast(`Imported ${count} variable(s) from ${format} file into "${scope}".`, "success");
     } catch (err) {
       toast(String(err), "error");
     } finally {
       setImportMenuOpen(false);
-    }
-  }
-
-  async function handleImportContent(content: string) {
-    try {
-      const count = await ipc.importEnvFile(content, scope);
-      toast(`Imported ${count} variable(s) into "${scope}".`, "success");
-    } catch (err) {
-      toast(String(err), "error");
     }
   }
 
@@ -131,17 +110,7 @@ export function Environments() {
     }
   }
 
-  // Feature 7.6: drag-and-drop
   const [dragging, setDragging] = useState(false);
-
-  function handleDragOver(e: React.DragEvent) {
-    e.preventDefault();
-    setDragging(true);
-  }
-
-  function handleDragLeave() {
-    setDragging(false);
-  }
 
   async function handleDrop(e: React.DragEvent) {
     e.preventDefault();
@@ -149,123 +118,141 @@ export function Environments() {
     const file = e.dataTransfer.files[0];
     if (!file) return;
     const content = await file.text();
-    await handleImportContent(content);
+    try {
+      const count = await ipc.importEnvFile(content, scope);
+      toast(`Imported ${count} variable(s) into "${scope}".`, "success");
+    } catch (err) {
+      toast(String(err), "error");
+    }
   }
 
-  const filtered = vars?.filter(v =>
-    !debouncedSearch || v.key.toLowerCase().includes(debouncedSearch.toLowerCase()) || v.value.toLowerCase().includes(debouncedSearch.toLowerCase())
+  const filtered = vars?.filter((v) =>
+    !debouncedSearch ||
+    v.key.toLowerCase().includes(debouncedSearch.toLowerCase()) ||
+    v.value.toLowerCase().includes(debouncedSearch.toLowerCase()),
   );
 
   return (
     <div
-      style={{ display: "flex", flexDirection: "column", gap: "1.5rem", position: "relative" }}
-      onDragOver={handleDragOver}
-      onDragLeave={handleDragLeave}
+      className="flex flex-col gap-5 relative"
+      onDragOver={(e) => { e.preventDefault(); setDragging(true); }}
+      onDragLeave={() => setDragging(false)}
       onDrop={handleDrop}
     >
+      {/* Drag overlay */}
       {dragging && (
         <div
-          style={{
-            position: "fixed",
-            inset: 0,
-            background: "rgba(0,0,0,0.7)",
-            border: "3px dashed var(--green)",
-            borderRadius: 12,
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            zIndex: 50,
-            pointerEvents: "none",
-          }}
+          className="fixed inset-0 z-50 flex items-center justify-center pointer-events-none"
+          style={{ background: "rgba(0,0,0,0.7)", border: "3px dashed var(--green)", borderRadius: 12 }}
+          aria-hidden="true"
         >
-          <span style={{ fontSize: 18, color: "var(--green)", fontWeight: 600 }}>
-            Drop .env file to import
-          </span>
+          <span className="text-[18px] text-green font-semibold">Drop .env file to import</span>
         </div>
       )}
-      <h1 style={{ fontSize: 18, fontWeight: 700, color: "var(--text)", margin: 0 }}>Environments</h1>
+
+      <h1 className="text-[18px] font-bold text-text m-0">Environments</h1>
 
       {/* Scope filter + import/export */}
-      <div style={{ display: "flex", gap: 6, alignItems: "center", flexWrap: "wrap" }}>
+      <div className="flex gap-2 items-center flex-wrap">
         {SCOPES.map((s) => (
-          <button key={s} onClick={() => setScope(s)} style={{
-            fontSize: 11, padding: "4px 12px", borderRadius: 9999,
-            border: `1px solid ${scope === s ? "var(--green-border)" : "var(--border)"}`,
-            background: scope === s ? "var(--green-dim)" : "var(--surface)",
-            color: scope === s ? "var(--green)" : "var(--text-3)",
-            cursor: "pointer", fontFamily: "var(--font-mono)", textTransform: "uppercase", letterSpacing: "0.8px",
-          }}>{s}</button>
+          <button
+            key={s}
+            onClick={() => setScope(s)}
+            className={`text-[11px] px-3 py-1 rounded-full border font-mono uppercase tracking-[0.8px] transition-colors cursor-pointer ${
+              scope === s
+                ? "border-green-border bg-green-dim text-green"
+                : "border-border bg-surface text-text-3 hover:text-text-2 hover:bg-surface-2"
+            }`}
+          >
+            {s}
+          </button>
         ))}
-        <div style={{ marginLeft: "auto", display: "flex", gap: 6, position: "relative" }}>
-          <div style={{ display: "flex", gap: 0, borderRadius: 4, overflow: "hidden", border: "1px solid var(--border)" }}>
+
+        <div className="ml-auto flex gap-2 relative">
+          {/* Import split button */}
+          <div className="flex rounded border border-border overflow-hidden">
             <button
               onClick={() => fileRef.current?.click()}
-              style={{
-                fontSize: 11, padding: "4px 12px", background: "var(--surface)",
-                color: "var(--text-3)", cursor: "pointer", fontFamily: "var(--font-mono)", border: "none", borderRight: "1px solid var(--border)"
-              }}>
+              className="text-[11px] px-3 py-1 bg-surface text-text-3 hover:text-text-2 hover:bg-surface-2 font-mono border-r border-border cursor-pointer transition-colors"
+            >
               ↑ Import
             </button>
             <button
               onClick={() => setImportMenuOpen(!importMenuOpen)}
-              style={{
-                fontSize: 11, padding: "4px 8px", background: "var(--surface)",
-                color: "var(--text-3)", cursor: "pointer", fontFamily: "var(--font-mono)", border: "none"
-              }}>
+              className="text-[11px] px-2 py-1 bg-surface text-text-3 hover:text-text-2 hover:bg-surface-2 font-mono cursor-pointer transition-colors"
+              aria-label="More import options"
+              aria-expanded={importMenuOpen}
+            >
               {importMenuOpen ? "▲" : "▼"}
             </button>
-            <input ref={fileRef} type="file" accept=".env,text/plain" onChange={handleImport} style={{ display: "none" }} />
+            <input ref={fileRef} type="file" accept=".env,text/plain" onChange={handleImport} className="hidden" />
           </div>
 
           {importMenuOpen && (
-            <div style={{
-              position: "absolute", top: "100%", right: 0, marginTop: 4,
-              background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 4,
-              boxShadow: "0 4px 12px rgba(0,0,0,0.3)", zIndex: 10, minWidth: 180, overflow: "hidden"
-            }}>
-              <button onClick={() => { fileRef.current?.click(); setImportMenuOpen(false); }} style={menuItemStyle}>.env File</button>
-              <button onClick={() => handleImportSecrets("kubernetes")} style={menuItemStyle}>Kubernetes Secret (YAML)</button>
-              <button onClick={() => handleImportSecrets("docker")} style={menuItemStyle}>Docker Secret (Env)</button>
+            <div className="absolute top-full left-0 mt-1 bg-surface border border-border rounded-md shadow-lg z-10 min-w-[180px] overflow-hidden">
+              <button onClick={() => { fileRef.current?.click(); setImportMenuOpen(false); }} className="block w-full px-3 py-2 text-[11px] font-mono text-text-2 hover:bg-surface-2 text-left cursor-pointer transition-colors">.env File</button>
+              <button onClick={() => handleImportSecrets("kubernetes")} className="block w-full px-3 py-2 text-[11px] font-mono text-text-2 hover:bg-surface-2 text-left cursor-pointer transition-colors">Kubernetes Secret (YAML)</button>
+              <button onClick={() => handleImportSecrets("docker")} className="block w-full px-3 py-2 text-[11px] font-mono text-text-2 hover:bg-surface-2 text-left cursor-pointer transition-colors">Docker Secret (Env)</button>
             </div>
           )}
 
-          <button onClick={handleExport} style={{
-            fontSize: 11, padding: "4px 12px", borderRadius: 4,
-            border: "1px solid var(--border)", background: "var(--surface)",
-            color: "var(--text-3)", cursor: "pointer", fontFamily: "var(--font-mono)",
-          }}>↓ Export .env</button>
+          <button
+            onClick={handleExport}
+            className="text-[11px] px-3 py-1 rounded border border-border bg-surface text-text-3 hover:text-text-2 hover:bg-surface-2 font-mono cursor-pointer transition-colors"
+          >
+            ↓ Export .env
+          </button>
         </div>
       </div>
 
       {/* Add / Edit form */}
-      <form onSubmit={handleSubmit} style={{ background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 8, padding: "1rem 1.25rem", display: "flex", flexDirection: "column", gap: 10 }}>
-        <div style={{ display: "flex", gap: 10, alignItems: "flex-end", flexWrap: "wrap" }}>
-          <Field label="Key" value={editing ? editing.key : form.key}
-            onChange={(v) => { setFormError(""); if (editing) { setEditing({ ...editing, key: v }); } else { setForm({ ...form, key: v }); } }}
-            placeholder="API_KEY" disabled={!!editing} />
-          <Field label="Value" value={editing ? editing.value : form.value}
+      <form
+        onSubmit={handleSubmit}
+        className="bg-surface border border-border rounded-lg p-4 flex flex-col gap-3"
+      >
+        <div className="flex gap-3 items-end flex-wrap">
+          <Field
+            label="Key"
+            value={editing ? editing.key : form.key}
+            onChange={(v) => { setFormError(""); editing ? setEditing({ ...editing, key: v }) : setForm({ ...form, key: v }); }}
+            placeholder="API_KEY"
+            disabled={!!editing}
+          />
+          <Field
+            label="Value"
+            value={editing ? editing.value : form.value}
             onChange={(v) => editing ? setEditing({ ...editing, value: v }) : setForm({ ...form, value: v })}
-            placeholder="secret" type="password" />
+            placeholder="secret"
+            type="password"
+          />
           {!editing && (
-            <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-              <label style={labelStyle}>Scope</label>
-              <select value={form.scope} onChange={(e) => setForm({ ...form, scope: e.target.value })} style={inputStyle}>
+            <div className="flex flex-col gap-1">
+              <label className="text-[10px] font-mono uppercase tracking-[0.8px] text-text-3">Scope</label>
+              <select
+                value={form.scope}
+                onChange={(e) => setForm({ ...form, scope: e.target.value })}
+                className="bg-surface-2 border border-border rounded px-2.5 py-1.5 text-[12px] text-text font-mono outline-none focus:border-green focus:ring-1 focus:ring-green/30 transition-colors"
+              >
                 {SCOPES.map((s) => <option key={s} value={s}>{s}</option>)}
               </select>
             </div>
           )}
           {editing && (
-            <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-              <label style={labelStyle}>Scope</label>
-              <span style={{ ...inputStyle, color: "var(--text-3)", opacity: 0.7 }}>{editing.scope}</span>
+            <div className="flex flex-col gap-1">
+              <label className="text-[10px] font-mono uppercase tracking-[0.8px] text-text-3">Scope</label>
+              <span className="text-[12px] font-mono text-text-3 px-2.5 py-1.5 bg-surface-2 rounded border border-border">{editing.scope}</span>
             </div>
           )}
-          <button type="submit" style={submitBtn} disabled={upsert.isPending}>{editing ? "Update" : "Add"}</button>
+          <Button type="submit" variant="primary" size="sm" loading={upsert.isPending}>
+            {editing ? "Update" : "Add"}
+          </Button>
           {editing && (
-            <button type="button" onClick={() => { setEditing(null); setFormError(""); }} style={{ ...submitBtn, background: "var(--surface-2)", color: "var(--text-3)", borderColor: "var(--border)" }}>Cancel</button>
+            <Button type="button" variant="secondary" size="sm" onClick={() => { setEditing(null); setFormError(""); }}>
+              Cancel
+            </Button>
           )}
         </div>
-        {formError && <p style={{ color: "var(--error)", fontSize: 12, margin: 0 }}>{formError}</p>}
+        {formError && <p className="text-error text-[12px] m-0">{formError}</p>}
       </form>
 
       {/* Search */}
@@ -273,53 +260,70 @@ export function Environments() {
         value={search}
         onChange={(e) => setSearch(e.target.value)}
         placeholder="Search by key or value…"
-        style={{ ...inputStyle, width: "100%", maxWidth: 320 }}
+        className="bg-surface-2 border border-border rounded px-3 py-1.5 text-[12px] text-text font-mono outline-none focus:border-green focus:ring-1 focus:ring-green/30 transition-colors placeholder:text-text-3 w-full max-w-xs"
       />
 
       {/* Table */}
-      <section style={{ background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 8, overflow: "hidden" }}>
+      <section className="bg-surface border border-border rounded-lg overflow-hidden">
         {isLoading && (
-          <div style={{ padding: "1rem", display: "flex", flexDirection: "column", gap: 10 }}>
-            {[0,1,2].map(i => <Skeleton key={i} height={36} />)}
+          <div className="p-4 flex flex-col gap-3">
+            {[0, 1, 2].map((i) => <Skeleton key={i} height={36} />)}
           </div>
         )}
         {!isLoading && filtered?.length === 0 && (
-          <p style={{ padding: "1rem", color: "var(--text-3)", fontSize: 13 }}>
+          <p className="p-4 text-text-3 text-[13px]">
             {search ? "No variables match your search." : "No variables in this scope."}
           </p>
         )}
         {filtered && filtered.length > 0 && (
-          <table style={{ width: "100%", borderCollapse: "collapse" }}>
+          <table className="w-full border-collapse">
             <thead>
-              <tr style={{ borderBottom: "1px solid var(--border)" }}>
+              <tr className="border-b border-border bg-surface-hi">
                 {["Key", "Value", "Scope", ""].map((h, i) => (
-                  <th key={i} style={{ textAlign: "left", padding: "8px 12px", fontSize: 10, fontFamily: "var(--font-mono)", textTransform: "uppercase", letterSpacing: "0.8px", color: "var(--text-3)", background: "var(--surface-hi)" }}>{h}</th>
+                  <th key={i} className="text-left px-3 py-2.5 text-[10px] font-mono uppercase tracking-[0.8px] text-text-3">
+                    {h}
+                  </th>
                 ))}
               </tr>
             </thead>
             <tbody>
               {filtered.map((v) => (
-                <tr key={v.id} style={{ borderBottom: "1px solid var(--border-light)" }}>
-                  <td style={{ padding: "9px 12px", color: "var(--green)", fontFamily: "var(--font-mono)", fontSize: 12 }}>{v.key}</td>
-                  <td style={{ padding: "9px 12px", fontFamily: "var(--font-mono)", fontSize: 12 }}>
-                    <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                      <span style={{ color: "var(--text-2)", letterSpacing: isMasked(v) ? "0.15em" : "normal" }}>
+                <tr key={v.id} className="border-b border-border-light hover:bg-surface-hi/50 transition-colors">
+                  <td className="px-3 py-2.5 text-green font-mono text-[12px]">{v.key}</td>
+                  <td className="px-3 py-2.5 font-mono text-[12px]">
+                    <div className="flex items-center gap-2">
+                      <span className={`text-text-2 ${isMasked(v) ? "tracking-[0.15em]" : ""}`}>
                         {isMasked(v) ? "••••••••" : v.value}
                       </span>
                       <button
                         onClick={() => toggleMask(v.id)}
-                        style={{ background: "none", border: "none", color: "var(--text-3)", cursor: "pointer", fontSize: 11, padding: 0, fontFamily: "var(--font-mono)" }}
-                        title={isMasked(v) ? "Show" : "Hide"}
+                        className="text-text-3 hover:text-text-2 text-[11px] font-mono cursor-pointer border-none bg-transparent p-0 transition-colors"
+                        aria-label={isMasked(v) ? `Show value for ${v.key}` : `Hide value for ${v.key}`}
                       >
                         {isMasked(v) ? "show" : "hide"}
                       </button>
                     </div>
                   </td>
-                  <td style={{ padding: "9px 12px", color: "var(--text-3)", fontFamily: "var(--font-mono)", fontSize: 11 }}>{v.scope}</td>
-                  <td style={{ padding: "9px 12px" }}>
-                    <div style={{ display: "flex", gap: 6 }}>
-                      <button onClick={() => { setEditing(v); setFormError(""); }} style={actionBtn("var(--violet)")}>Edit</button>
-                      <button onClick={() => setConfirmDelete(v)} style={actionBtn("var(--error)")}>Delete</button>
+                  <td className="px-3 py-2.5 text-text-3 font-mono text-[11px]">{v.scope}</td>
+                  <td className="px-3 py-2.5">
+                    <div className="flex gap-2">
+                      <Button
+                        onClick={() => { setEditing(v); setFormError(""); }}
+                        variant="ghost"
+                        size="sm"
+                        className="text-violet hover:text-violet"
+                        aria-label={`Edit ${v.key}`}
+                      >
+                        Edit
+                      </Button>
+                      <Button
+                        onClick={() => setConfirmDelete(v)}
+                        variant="danger"
+                        size="sm"
+                        aria-label={`Delete ${v.key}`}
+                      >
+                        Delete
+                      </Button>
                     </div>
                   </td>
                 </tr>
@@ -329,21 +333,21 @@ export function Environments() {
         )}
       </section>
 
-      {/* Delete confirmation */}
-      {confirmDelete && (
-        <div onClick={() => setConfirmDelete(null)} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.6)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 100 }}>
-          <div onClick={(e) => e.stopPropagation()} style={{ background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 10, padding: "1.5rem", width: 360 }}>
-            <p style={{ color: "var(--text)", fontSize: 14, fontWeight: 600, margin: "0 0 8px" }}>Delete variable?</p>
-            <p style={{ color: "var(--text-3)", fontSize: 13, margin: "0 0 1.25rem" }}>
-              <code style={{ color: "var(--green)", fontFamily: "var(--font-mono)" }}>{confirmDelete.key}</code> in <em>{confirmDelete.scope}</em> will be permanently deleted.
-            </p>
-            <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
-              <button onClick={() => setConfirmDelete(null)} style={{ padding: "6px 14px", borderRadius: 4, border: "1px solid var(--border)", background: "var(--surface-2)", color: "var(--text-2)", cursor: "pointer", fontSize: 12 }}>Cancel</button>
-              <button onClick={() => { remove.mutate({ id: Number(confirmDelete.id), scope: confirmDelete.scope }); setConfirmDelete(null); }} style={{ padding: "6px 14px", borderRadius: 4, border: "1px solid var(--error)", background: "var(--error-dim)", color: "var(--error)", cursor: "pointer", fontSize: 12, fontWeight: 600 }}>Delete</button>
-            </div>
-          </div>
-        </div>
-      )}
+      {/* Delete confirmation modal */}
+      <ConfirmModal
+        open={!!confirmDelete}
+        onClose={() => setConfirmDelete(null)}
+        onConfirm={() => {
+          if (confirmDelete) {
+            remove.mutate({ id: Number(confirmDelete.id), scope: confirmDelete.scope });
+            setConfirmDelete(null);
+          }
+        }}
+        title="Delete variable?"
+        message={`"${confirmDelete?.key}" in ${confirmDelete?.scope} will be permanently deleted.`}
+        confirmLabel="Delete"
+        variant="danger"
+      />
     </div>
   );
 }
@@ -354,20 +358,29 @@ function Field({ label, value, onChange, placeholder, disabled, type = "text" }:
 }) {
   const [show, setShow] = useState(false);
   const isPassword = type === "password";
+  const inputId = `env-field-${label.toLowerCase()}`;
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-      <label style={labelStyle}>{label}</label>
-      <div style={{ display: "flex", gap: 0 }}>
+    <div className="flex flex-col gap-1">
+      <label htmlFor={inputId} className="text-[10px] font-mono uppercase tracking-[0.8px] text-text-3">
+        {label}
+      </label>
+      <div className="flex">
         <input
+          id={inputId}
           value={value}
           onChange={(e) => onChange(e.target.value)}
           placeholder={placeholder}
           disabled={disabled}
           type={isPassword && !show ? "password" : "text"}
-          style={{ ...inputStyle, opacity: disabled ? 0.5 : 1, borderRadius: isPassword ? "4px 0 0 4px" : 4 }}
+          className={`bg-surface-2 border border-border text-[12px] text-text font-mono px-2.5 py-1.5 outline-none focus:border-green focus:ring-1 focus:ring-green/30 transition-colors placeholder:text-text-3 min-w-[140px] disabled:opacity-50 disabled:cursor-not-allowed ${isPassword ? "rounded-l" : "rounded"}`}
         />
         {isPassword && (
-          <button type="button" onClick={() => setShow(s => !s)} style={{ padding: "0 8px", background: "var(--surface-3)", border: "1px solid var(--border)", borderLeft: "none", borderRadius: "0 4px 4px 0", color: "var(--text-3)", cursor: "pointer", fontSize: 11, fontFamily: "var(--font-mono)" }}>
+          <button
+            type="button"
+            onClick={() => setShow((s) => !s)}
+            aria-label={show ? "Hide value" : "Show value"}
+            className="px-2 bg-surface-3 border border-l-0 border-border rounded-r text-text-3 hover:text-text-2 cursor-pointer text-[11px] font-mono transition-colors"
+          >
             {show ? "hide" : "show"}
           </button>
         )}
@@ -375,21 +388,3 @@ function Field({ label, value, onChange, placeholder, disabled, type = "text" }:
     </div>
   );
 }
-
-const labelStyle: React.CSSProperties = { fontSize: 10, fontFamily: "var(--font-mono)", textTransform: "uppercase", letterSpacing: "0.8px", color: "var(--text-3)" };
-const inputStyle: React.CSSProperties = { background: "var(--surface-2)", border: "1px solid var(--border)", borderRadius: 4, padding: "6px 10px", color: "var(--text)", fontSize: 12, fontFamily: "var(--font-mono)", outline: "none", minWidth: 160 };
-const submitBtn: React.CSSProperties = { padding: "7px 16px", borderRadius: 4, border: "1px solid var(--green-border)", background: "var(--green-dim)", color: "var(--green)", cursor: "pointer", fontSize: 12, fontFamily: "var(--font-mono)", fontWeight: 600 };
-const actionBtn = (color: string): React.CSSProperties => ({ fontSize: 11, padding: "2px 8px", borderRadius: 4, border: `1px solid ${color}`, background: "transparent", color, cursor: "pointer", fontFamily: "var(--font-mono)" });
-const menuItemStyle: React.CSSProperties = {
-  display: "block",
-  width: "100%",
-  padding: "8px 12px",
-  background: "transparent",
-  border: "none",
-  color: "var(--text-2)",
-  textAlign: "left",
-  fontSize: 11,
-  fontFamily: "var(--font-mono)",
-  cursor: "pointer",
-  outline: "none",
-};

@@ -1,11 +1,16 @@
 import { useEffect, useState } from "react";
 import { ipc, type ContainerDetails, type ContainerStats } from "../lib/ipc";
 import { useToast } from "./Toast";
+import { Modal } from "./ui/Modal";
+import { Button } from "./ui/Button";
+import { ProgressBar } from "./ui/index";
 
 interface Props {
   containerId: string;
   onClose: () => void;
 }
+
+const SENSITIVE_RE = /secret|password|token|key|pwd|pass|auth|credential/i;
 
 export function ContainerDetailsModal({ containerId, onClose }: Props) {
   const [details, setDetails] = useState<ContainerDetails | null>(null);
@@ -16,8 +21,7 @@ export function ContainerDetailsModal({ containerId, onClose }: Props) {
   function toggleMask(key: string) {
     setMasked((prev) => {
       const next = new Set(prev);
-      if (next.has(key)) next.delete(key);
-      else next.add(key);
+      if (next.has(key)) next.delete(key); else next.add(key);
       return next;
     });
   }
@@ -36,79 +40,95 @@ export function ContainerDetailsModal({ containerId, onClose }: Props) {
   }, [containerId]);
 
   return (
-    <div
-      onClick={onClose}
-      className="fixed inset-0 bg-black/60 flex items-center justify-center z-[100] backdrop-blur-sm"
+    <Modal
+      open={true}
+      onClose={onClose}
+      title={details?.name ?? "Container Details"}
+      width="max-w-[540px]"
     >
-      <div
-        onClick={(e) => e.stopPropagation()}
-        className="bg-surface border border-border rounded-xl p-6 w-full max-w-[520px] max-h-[85vh] overflow-auto shadow-2xl"
-      >
-        <div className="flex justify-between items-center mb-4">
-          <span className="font-bold text-text text-[15px]">
-            {details?.name ?? "Container Details"}
-          </span>
-          <button onClick={onClose} className="bg-transparent border-none text-text-3 cursor-pointer text-xl leading-none hover:text-text transition-colors">×</button>
+      {error && (
+        <p className="text-error text-[13px] bg-error/10 px-3 py-2 rounded border border-error/20 mb-3">
+          {error}
+        </p>
+      )}
+      {!details && !error && (
+        <div className="flex items-center gap-2 text-text-3 text-[13px] font-mono">
+          <span className="w-3.5 h-3.5 border-2 border-current border-t-transparent rounded-full animate-spin" aria-hidden="true" />
+          Loading…
         </div>
+      )}
 
-        {error && <p className="text-error text-[13px]">{error}</p>}
-        {!details && !error && <p className="text-text-3 text-[13px]">Loading…</p>}
+      {details && (
+        <div className="flex flex-col gap-3">
+          <Row label="Image"   value={details.image} />
+          <Row label="State"   value={details.state} />
+          <Row label="Ports"   value={details.ports.join(", ") || "—"} />
+          <Row label="Mounts"  value={details.mounts.join(", ") || "—"} />
+          <Row label="Command" value={details.cmd.join(" ") || "—"} />
 
-        {details && (
-          <div className="flex flex-col gap-3">
-            <Row label="Image" value={details.image} />
-            <Row label="State" value={details.state} />
-            <Row label="Ports" value={details.ports.join(", ") || "—"} />
-            <Row label="Mounts" value={details.mounts.join(", ") || "—"} />
-            <Row label="Command" value={details.cmd.join(" ") || "—"} />
-
-            {/* Feature 7.1: per-container stats */}
-            {stats && (
-              <div className="mt-2">
-                <div className={labelClass}>Resource Usage</div>
-                <div className="grid grid-cols-2 gap-3 mt-2">
-                  <StatBar label="CPU" value={`${stats.cpu_percent.toFixed(1)}%`} pct={stats.cpu_percent} max={100} />
-                  <StatBar
-                    label="Memory"
-                    value={`${stats.mem_used_mb} / ${stats.mem_limit_mb} MB`}
-                    pct={Number(stats.mem_used_mb)}
-                    max={Number(stats.mem_limit_mb) || 1}
-                  />
-                </div>
+          {/* Per-container resource stats */}
+          {stats && (
+            <div className="mt-1 pt-3 border-t border-border">
+              <div className={labelClass}>Resource Usage</div>
+              <div className="grid grid-cols-2 gap-3 mt-2">
+                <StatBar
+                  label="CPU"
+                  value={`${stats.cpu_percent.toFixed(1)}%`}
+                  pct={stats.cpu_percent}
+                  max={100}
+                />
+                <StatBar
+                  label="Memory"
+                  value={`${stats.mem_used_mb} / ${stats.mem_limit_mb} MB`}
+                  pct={Number(stats.mem_used_mb)}
+                  max={Number(stats.mem_limit_mb) || 1}
+                />
               </div>
-            )}
+            </div>
+          )}
 
-            <LimitsEditor containerId={containerId} initialCpu={null} initialMem={stats ? Number(stats.mem_limit_mb) : undefined} />
+          <LimitsEditor
+            containerId={containerId}
+            initialCpu={null}
+            initialMem={stats ? Number(stats.mem_limit_mb) : undefined}
+          />
 
-            {details.env.length > 0 && (
-              <div className="mt-2">
-                <div className={labelClass}>Environment</div>
-                <div className="flex flex-col gap-1 mt-1.5">
-                  {details.env.map((raw, i) => {
-                    const eqIdx = raw.indexOf("=");
-                    const key = eqIdx > 0 ? raw.slice(0, eqIdx) : "";
-                    const value = eqIdx > 0 ? raw.slice(eqIdx + 1) : raw;
-                    const hidden = isMasked(key);
-                    return (
-                      <code key={i} className="flex items-center gap-2 text-[11px] text-green font-mono bg-bg-deep px-2 py-0.5 rounded border border-border-light overflow-hidden text-ellipsis">
-                        <span>{key}={hidden ? "••••••••" : value}</span>
-                        {key && SENSITIVE_RE.test(key) && (
-                          <button onClick={() => toggleMask(key)}
-                            className="bg-none border-none text-text-3 cursor-pointer text-[10px] font-mono p-0 shrink-0 hover:text-text-2 transition-colors"
-                            style={{ background: "none", border: "none", cursor: "pointer", fontFamily: "var(--font-mono)", fontSize: 10, padding: 0, color: "var(--text-3)" }}>
-                            {hidden ? "show" : "hide"}
-                          </button>
-                        )}
+          {/* Environment variables */}
+          {details.env.length > 0 && (
+            <div className="mt-1 pt-3 border-t border-border">
+              <div className={labelClass}>Environment</div>
+              <div className="flex flex-col gap-1 mt-2">
+                {details.env.map((raw, i) => {
+                  const eqIdx = raw.indexOf("=");
+                  const key = eqIdx > 0 ? raw.slice(0, eqIdx) : "";
+                  const value = eqIdx > 0 ? raw.slice(eqIdx + 1) : raw;
+                  const hidden = isMasked(key);
+                  return (
+                    <div
+                      key={i}
+                      className="flex items-center gap-2 text-[11px] text-green font-mono bg-bg-deep px-2 py-1 rounded border border-border-light"
+                    >
+                      <code className="flex-1 overflow-hidden text-ellipsis whitespace-nowrap">
+                        {key}={hidden ? "••••••••" : value}
                       </code>
-                    );
-                  })}
-                </div>
+                      {key && SENSITIVE_RE.test(key) && (
+                        <button
+                          onClick={() => toggleMask(key)}
+                          aria-label={hidden ? `Show value for ${key}` : `Hide value for ${key}`}
+                          className="text-text-3 hover:text-text-2 cursor-pointer border-none bg-transparent p-0 text-[10px] font-mono transition-colors shrink-0"
+                        >
+                          {hidden ? "show" : "hide"}
+                        </button>
+                      )}
+                    </div>
+                  );
+                })}
               </div>
-            )}
-          </div>
-        )}
-      </div>
-    </div>
+            </div>
+          )}
+        </div>
+      )}
+    </Modal>
   );
 }
 
@@ -122,28 +142,24 @@ function Row({ label, value }: { label: string; value: string }) {
 }
 
 function StatBar({ label, value, pct, max }: { label: string; value: string; pct: number; max: number }) {
-  const percent = Math.min((pct / max) * 100, 100);
   return (
     <div className="flex flex-col gap-1.5">
       <div className="flex justify-between">
-        <span className={`${labelClass} normal-case`}>{label}</span>
+        <span className={labelClass}>{label}</span>
         <span className="text-[11px] text-text-2 font-mono">{value}</span>
       </div>
-      <div className="bg-surface-3 rounded h-1.5 overflow-hidden">
-        <div
-          className={`h-full transition-all duration-300 ${percent > 80 ? "bg-orange" : "bg-green"}`}
-          style={{ width: `${percent}%` }}
-        />
-      </div>
+      <ProgressBar value={pct} max={max} />
     </div>
   );
 }
 
 const labelClass = "text-[10px] font-mono uppercase tracking-wider text-text-3";
 
-const SENSITIVE_RE = /secret|password|token|key|pwd|pass|auth|credential/i;
-
-function LimitsEditor({ containerId, initialCpu, initialMem }: { containerId: string, initialCpu: number | null, initialMem?: number }) {
+function LimitsEditor({ containerId, initialCpu, initialMem }: {
+  containerId: string;
+  initialCpu: number | null;
+  initialMem?: number;
+}) {
   const [cpu, setCpu] = useState(initialCpu?.toString() ?? "");
   const [mem, setMem] = useState(initialMem?.toString() ?? "");
   const [loading, setLoading] = useState(false);
@@ -155,7 +171,7 @@ function LimitsEditor({ containerId, initialCpu, initialMem }: { containerId: st
       const cpuShares = cpu ? parseInt(cpu) : undefined;
       const memoryBytes = mem ? parseInt(mem) * 1024 * 1024 : undefined;
       await ipc.updateContainerLimits(containerId, cpuShares, memoryBytes);
-      toast("Limits updated successfully", "success");
+      toast("Resource limits updated successfully", "success");
     } catch (e) {
       toast(`Error updating limits: ${e}`, "error");
     } finally {
@@ -164,37 +180,41 @@ function LimitsEditor({ containerId, initialCpu, initialMem }: { containerId: st
   };
 
   return (
-    <div className="mt-2 border-t border-border pt-4">
-      <div className={labelClass}>Edit Resource Limits</div>
-      <div className="grid grid-cols-2 gap-3 mt-2">
+    <div className="mt-1 pt-3 border-t border-border">
+      <div className={`${labelClass} mb-2`}>Edit Resource Limits</div>
+      <div className="grid grid-cols-2 gap-3">
         <div className="flex flex-col gap-1">
-          <label className="text-[11px] text-text-2">CPU Shares</label>
+          <label htmlFor="limits-cpu" className="text-[11px] text-text-2">CPU Shares</label>
           <input
+            id="limits-cpu"
             type="number"
             value={cpu}
             onChange={(e) => setCpu(e.target.value)}
             placeholder="e.g. 1024"
-            className="bg-bg-deep border border-border rounded px-2 py-1 text-[12px] text-text font-mono focus:outline-none focus:border-blue transition-colors"
+            className="bg-bg-deep border border-border rounded px-2 py-1 text-[12px] text-text font-mono focus:outline-none focus:border-blue focus:ring-1 focus:ring-blue/30 transition-colors"
           />
         </div>
         <div className="flex flex-col gap-1">
-          <label className="text-[11px] text-text-2">Memory (MB)</label>
+          <label htmlFor="limits-mem" className="text-[11px] text-text-2">Memory (MB)</label>
           <input
+            id="limits-mem"
             type="number"
             value={mem}
             onChange={(e) => setMem(e.target.value)}
             placeholder="e.g. 512"
-            className="bg-bg-deep border border-border rounded px-2 py-1 text-[12px] text-text font-mono focus:outline-none focus:border-blue transition-colors"
+            className="bg-bg-deep border border-border rounded px-2 py-1 text-[12px] text-text font-mono focus:outline-none focus:border-blue focus:ring-1 focus:ring-blue/30 transition-colors"
           />
         </div>
       </div>
-      <button
+      <Button
         onClick={handleUpdate}
-        disabled={loading}
-        className="mt-3 w-full bg-blue/10 hover:bg-blue/20 border border-blue/30 text-blue text-[12px] font-medium py-1.5 rounded-lg transition-colors disabled:opacity-50"
+        loading={loading}
+        variant="secondary"
+        size="sm"
+        className="mt-3 w-full justify-center border-blue/30 text-blue bg-blue/10 hover:bg-blue/20"
       >
-        {loading ? "Updating..." : "Apply Resource Limits"}
-      </button>
+        Apply Resource Limits
+      </Button>
     </div>
   );
 }

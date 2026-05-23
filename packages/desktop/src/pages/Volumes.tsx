@@ -3,6 +3,8 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { ipc, type VolumeInfo } from "../lib/ipc";
 import { Skeleton } from "../components/Skeleton";
 import { useToast } from "../components/Toast";
+import { Button } from "../components/ui/Button";
+import { ConfirmModal, Modal } from "../components/ui/Modal";
 
 function useVolumes() {
   return useQuery({
@@ -18,7 +20,8 @@ export function Volumes() {
   const [pruning, setPruning] = useState(false);
   const [selected, setSelected] = useState<VolumeInfo | null>(null);
   const [selectedDetail, setSelectedDetail] = useState<Record<string, unknown> | null>(null);
-  const [loadingDetail, setLoadingDetail] = useState(false);
+  /** Track which volume name is currently loading its details */
+  const [loadingId, setLoadingId] = useState<string | null>(null);
   const { toast } = useToast();
 
   async function handlePrune() {
@@ -35,66 +38,87 @@ export function Volumes() {
     }
   }
 
+  async function handleInspect(v: VolumeInfo) {
+    setSelected(v);
+    setSelectedDetail(null);
+    setLoadingId(v.name);
+    try {
+      const detail = await ipc.inspectVolume(v.name);
+      setSelectedDetail(detail);
+    } catch {
+      setSelectedDetail(null);
+    } finally {
+      setLoadingId(null);
+    }
+  }
+
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: "1.5rem" }}>
-      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-        <h1 style={{ fontSize: 18, fontWeight: 700, color: "var(--text)", margin: 0 }}>Volumes</h1>
-        <div style={{ display: "flex", gap: 8 }}>
-          <button
+    <div className="flex flex-col gap-5">
+      {/* Header */}
+      <div className="flex items-center justify-between">
+        <h1 className="text-[18px] font-bold text-text m-0">Volumes</h1>
+        <div className="flex gap-2">
+          <Button
             onClick={() => qc.invalidateQueries({ queryKey: ["volumes"] })}
             disabled={isFetching}
-            style={btnStyle("var(--text-2)", "var(--surface)")}
+            variant="secondary"
+            size="sm"
+            aria-label="Refresh volumes"
           >
             {isFetching ? "…" : "↻ Refresh"}
-          </button>
-          <button
-            onClick={() => setConfirmPrune(true)}
-            style={btnStyle("var(--error)", "var(--error-dim)")}
-          >
+          </Button>
+          <Button onClick={() => setConfirmPrune(true)} variant="danger" size="sm">
             Prune unused
-          </button>
+          </Button>
         </div>
       </div>
 
-      <section style={{ background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 8, overflow: "hidden" }}>
+      {/* Table */}
+      <section className="bg-surface border border-border rounded-lg overflow-hidden">
         {isLoading && (
-          <div style={{ padding: "1rem", display: "flex", flexDirection: "column", gap: 10 }}>
+          <div className="p-4 flex flex-col gap-3">
             {[0, 1, 2].map((i) => <Skeleton key={i} height={40} />)}
           </div>
         )}
-        {error && <p style={{ padding: "1rem", color: "var(--error)", fontSize: 13 }}>Docker unavailable.</p>}
-        {volumes?.length === 0 && <p style={{ padding: "1rem", color: "var(--text-3)", fontSize: 13 }}>No volumes found.</p>}
+        {error && (
+          <p className="p-4 text-error text-[13px]">Docker unavailable.</p>
+        )}
+        {volumes?.length === 0 && (
+          <p className="p-4 text-text-3 text-[13px]">No volumes found.</p>
+        )}
         {volumes && volumes.length > 0 && (
-          <table style={{ width: "100%", borderCollapse: "collapse" }}>
+          <table className="w-full border-collapse">
             <thead>
-              <tr style={{ borderBottom: "1px solid var(--border)" }}>
+              <tr className="border-b border-border bg-surface-hi">
                 {["Name", "Driver", "Scope", "Created", ""].map((h) => (
-                  <th key={h} style={{ textAlign: "left", padding: "8px 12px", fontSize: 10, fontFamily: "var(--font-mono)", textTransform: "uppercase", letterSpacing: "0.8px", color: "var(--text-3)", background: "var(--surface-hi)" }}>{h}</th>
+                  <th
+                    key={h}
+                    className="text-left px-3 py-2.5 text-[10px] font-mono uppercase tracking-[0.8px] text-text-3"
+                  >
+                    {h}
+                  </th>
                 ))}
               </tr>
             </thead>
             <tbody>
               {volumes.map((v) => (
-                <tr key={v.name} style={{ borderBottom: "1px solid var(--border-light)" }}>
-                  <td style={{ padding: "10px 12px", color: "var(--violet)", fontFamily: "var(--font-mono)", fontSize: 12 }}>{v.name}</td>
-                  <td style={{ padding: "10px 12px", color: "var(--text-3)", fontFamily: "var(--font-mono)", fontSize: 12 }}>{v.driver}</td>
-                  <td style={{ padding: "10px 12px", color: "var(--text-3)", fontFamily: "var(--font-mono)", fontSize: 12 }}>{v.scope}</td>
-                  <td style={{ padding: "10px 12px", color: "var(--text-3)", fontFamily: "var(--font-mono)", fontSize: 12 }}>{v.created ? new Date(v.created).toLocaleDateString() : "—"}</td>
-                  <td style={{ padding: "10px 12px" }}>
-                    <button onClick={async () => {
-                      setLoadingDetail(true);
-                      setSelected(v);
-                      try {
-                        const detail = await ipc.inspectVolume(v.name);
-                        setSelectedDetail(detail);
-                      } catch {
-                        setSelectedDetail(null);
-                      } finally {
-                        setLoadingDetail(false);
-                      }
-                    }} style={{ fontSize: 10, padding: "2px 8px", borderRadius: 4, border: "1px solid var(--border-hi)", background: "transparent", color: "var(--text-3)", cursor: "pointer", fontFamily: "var(--font-mono)" }}>
-                      {loadingDetail ? "…" : "Inspect"}
-                    </button>
+                <tr key={v.name} className="border-b border-border-light hover:bg-surface-hi/50 transition-colors">
+                  <td className="px-3 py-2.5 text-violet font-mono text-[12px] max-w-[180px] truncate">{v.name}</td>
+                  <td className="px-3 py-2.5 text-text-3 font-mono text-[12px]">{v.driver}</td>
+                  <td className="px-3 py-2.5 text-text-3 font-mono text-[12px]">{v.scope}</td>
+                  <td className="px-3 py-2.5 text-text-3 font-mono text-[12px]">
+                    {v.created ? new Date(v.created).toLocaleDateString() : "—"}
+                  </td>
+                  <td className="px-3 py-2.5">
+                    <Button
+                      onClick={() => handleInspect(v)}
+                      loading={loadingId === v.name}
+                      variant="ghost"
+                      size="sm"
+                      aria-label={`Inspect volume ${v.name}`}
+                    >
+                      Inspect
+                    </Button>
                   </td>
                 </tr>
               ))}
@@ -103,62 +127,60 @@ export function Volumes() {
         )}
       </section>
 
-      {/* Inspect modal */}
-      {selected && (
-        <div onClick={() => { setSelected(null); setSelectedDetail(null); }} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.6)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 100 }}>
-          <div onClick={(e) => e.stopPropagation()} style={{ background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 10, padding: "1.5rem", width: 520, maxHeight: "80vh", overflow: "auto" }}>
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "1rem" }}>
-              <span style={{ fontWeight: 700, color: "var(--violet)", fontSize: 15, fontFamily: "var(--font-mono)" }}>{selected.name}</span>
-              <button onClick={() => { setSelected(null); setSelectedDetail(null); }} style={{ background: "none", border: "none", color: "var(--text-3)", cursor: "pointer", fontSize: 18 }}>×</button>
-            </div>
-            <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-              {[
-                ["Driver", selected.driver],
-                ["Scope", selected.scope],
-                ["Mountpoint", selected.mountpoint],
-                ["Created", selected.created || "—"],
-              ].map(([k, v]) => (
-                <div key={k} style={{ display: "grid", gridTemplateColumns: "100px 1fr", gap: 8 }}>
-                  <span style={{ fontSize: 10, fontFamily: "var(--font-mono)", textTransform: "uppercase", letterSpacing: "0.8px", color: "var(--text-3)" }}>{k}</span>
-                  <span style={{ fontSize: 12, fontFamily: "var(--font-mono)", color: "var(--text-2)", wordBreak: "break-all" }}>{v}</span>
-                </div>
-              ))}
-              {selectedDetail && Object.entries(selectedDetail).filter(([k]) => !["Name", "Driver", "Mountpoint", "CreatedAt", "Scope"].includes(k)).map(([k, v]) => (
-                <div key={k} style={{ display: "grid", gridTemplateColumns: "100px 1fr", gap: 8 }}>
-                  <span style={{ fontSize: 10, fontFamily: "var(--font-mono)", textTransform: "uppercase", letterSpacing: "0.8px", color: "var(--text-3)" }}>{k}</span>
-                  <span style={{ fontSize: 12, fontFamily: "var(--font-mono)", color: "var(--text-2)", wordBreak: "break-all" }}>{typeof v === "object" && v !== null ? JSON.stringify(v, null, 1) : String(v)}</span>
-                </div>
-              ))}
-            </div>
-          </div>
-        </div>
-      )}
+      {/* Inspect Modal */}
+      <Modal
+        open={!!selected}
+        onClose={() => { setSelected(null); setSelectedDetail(null); }}
+        title={selected?.name ?? "Volume"}
+        width="max-w-lg"
+      >
+        {selected && (
+          <div className="flex flex-col gap-3">
+            {[
+              ["Driver", selected.driver],
+              ["Scope", selected.scope],
+              ["Mountpoint", selected.mountpoint],
+              ["Created", selected.created || "—"],
+            ].map(([k, v]) => (
+              <div key={k} className="grid grid-cols-[110px_1fr] gap-2 items-start">
+                <span className="text-[10px] font-mono uppercase tracking-[0.8px] text-text-3 pt-0.5">{k}</span>
+                <span className="text-[12px] font-mono text-text-2 break-all">{v}</span>
+              </div>
+            ))}
 
-      {/* Prune confirm */}
-      {confirmPrune && (
-        <div onClick={() => setConfirmPrune(false)} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.6)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 100 }}>
-          <div onClick={(e) => e.stopPropagation()} style={{ background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 10, padding: "1.5rem", width: 360 }}>
-            <p style={{ color: "var(--text)", fontSize: 14, fontWeight: 600, margin: "0 0 8px" }}>Prune unused volumes?</p>
-            <p style={{ color: "var(--text-3)", fontSize: 13, margin: "0 0 1.25rem" }}>
-              This will permanently delete all volumes not used by any container.
-            </p>
-            <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
-              <button onClick={() => setConfirmPrune(false)} style={btnStyle("var(--text-2)", "var(--surface-2)")}>Cancel</button>
-              <button onClick={handlePrune} disabled={pruning} style={btnStyle("var(--error)", "var(--error-dim)")}>
-                {pruning ? "Pruning…" : "Prune"}
-              </button>
-            </div>
+            {/* Extra inspect data */}
+            {loadingId === selected.name && (
+              <div className="flex items-center gap-2 text-[12px] text-text-3 font-mono mt-2">
+                <span className="w-3 h-3 border-2 border-current border-t-transparent rounded-full animate-spin" />
+                Loading details…
+              </div>
+            )}
+            {selectedDetail &&
+              Object.entries(selectedDetail)
+                .filter(([k]) => !["Name", "Driver", "Mountpoint", "CreatedAt", "Scope"].includes(k))
+                .map(([k, v]) => (
+                  <div key={k} className="grid grid-cols-[110px_1fr] gap-2 items-start">
+                    <span className="text-[10px] font-mono uppercase tracking-[0.8px] text-text-3 pt-0.5">{k}</span>
+                    <span className="text-[12px] font-mono text-text-2 break-all">
+                      {typeof v === "object" && v !== null ? JSON.stringify(v, null, 1) : String(v)}
+                    </span>
+                  </div>
+                ))}
           </div>
-        </div>
-      )}
+        )}
+      </Modal>
+
+      {/* Prune Confirm Modal */}
+      <ConfirmModal
+        open={confirmPrune}
+        onClose={() => setConfirmPrune(false)}
+        onConfirm={handlePrune}
+        title="Prune unused volumes?"
+        message="This will permanently delete all volumes not used by any container. This cannot be undone."
+        confirmLabel="Prune"
+        variant="danger"
+        loading={pruning}
+      />
     </div>
   );
-}
-
-function btnStyle(color: string, bg: string): React.CSSProperties {
-  return {
-    fontSize: 11, padding: "5px 14px", borderRadius: 4,
-    border: `1px solid ${color === "var(--text-2)" ? "var(--border)" : color}`,
-    background: bg, color, cursor: "pointer", fontFamily: "var(--font-mono)",
-  };
 }

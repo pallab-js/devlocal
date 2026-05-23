@@ -3,7 +3,7 @@ pub mod docker;
 pub mod error;
 pub mod settings;
 
-use crate::docker::{DiskState, DockerState, EventStreamState, LogStreamState, SysState};
+use crate::docker::{DiskState, DockerState, EventStreamState, LogStreamState, PullState, SysState};
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 use std::time::Instant;
@@ -35,10 +35,10 @@ pub fn run(context: tauri::Context) {
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_fs::init())
-        .plugin(tauri_plugin_updater::Builder::new().build())
         .manage(DockerState(docker.map(Arc::new)))
         .manage(LogStreamState(Mutex::new(HashMap::new())))
         .manage(EventStreamState(Mutex::new(None)))
+        .manage(PullState(Mutex::new(None)))
         .manage(SysState(Mutex::new(System::new())))
         .manage(DiskState(Mutex::new((
             sysinfo::Disks::new_with_refreshed_list(),
@@ -107,7 +107,6 @@ pub fn run(context: tauri::Context) {
             docker::list_volumes,
             docker::prune_volumes,
             docker::list_images,
-            docker::remove_image,
             docker::pull_image,
             docker::compose_up,
             docker::compose_down,

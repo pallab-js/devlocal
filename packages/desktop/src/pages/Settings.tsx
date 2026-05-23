@@ -1,65 +1,28 @@
 import { useEffect, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { check } from "@tauri-apps/plugin-updater";
 import { ipc, type AppInfo } from "../lib/ipc";
+import { Button } from "../components/ui/Button";
+import { Card } from "../components/ui/index";
+import { ConfirmModal } from "../components/ui/Modal";
+import { Select } from "../components/ui/index";
 
-const card: React.CSSProperties = {
-  background: "var(--surface)",
-  border: "1px solid var(--border)",
-  borderRadius: 8,
-  padding: "1rem 1.25rem",
-};
-
-const secTitle: React.CSSProperties = {
-  fontSize: 11,
-  fontFamily: "var(--font-mono)",
-  textTransform: "uppercase",
-  letterSpacing: "1.2px",
-  color: "var(--text-3)",
-  margin: "0 0 1rem 0",
-  paddingBottom: "0.5rem",
-  borderBottom: "1px solid var(--border-light)",
-};
-
-const row: React.CSSProperties = {
-  display: "flex",
-  alignItems: "center",
-  justifyContent: "space-between",
-  padding: "8px 0",
-  borderBottom: "1px solid var(--border-light)",
-};
-
-const label: React.CSSProperties = {
-  fontSize: 13,
-  color: "var(--text)",
-  fontWeight: 500,
-};
-
-const sublabel: React.CSSProperties = {
-  fontSize: 11,
-  color: "var(--text-3)",
-  marginTop: 2,
-};
-
-function Btn({
-  children, onClick, color = "var(--green)", bg = "var(--green-dim)", border = "var(--green-border)", disabled,
+function SettingRow({
+  label,
+  sublabel,
+  children,
 }: {
-  children: React.ReactNode; onClick?: () => void;
-  color?: string; bg?: string; border?: string; disabled?: boolean;
+  label: string;
+  sublabel?: string;
+  children?: React.ReactNode;
 }) {
   return (
-    <button
-      onClick={onClick}
-      disabled={disabled}
-      style={{
-        padding: "5px 14px", borderRadius: 4, border: `1px solid ${border}`,
-        background: bg, color, cursor: disabled ? "not-allowed" : "pointer",
-        fontSize: 12, fontFamily: "var(--font-mono)", fontWeight: 600,
-        opacity: disabled ? 0.5 : 1,
-      }}
-    >
-      {children}
-    </button>
+    <div className="flex items-center justify-between py-3 border-b border-border-light last:border-0">
+      <div>
+        <div className="text-[13px] font-medium text-text">{label}</div>
+        {sublabel && <div className="text-[11px] text-text-3 mt-0.5">{sublabel}</div>}
+      </div>
+      {children && <div className="ml-4 shrink-0">{children}</div>}
+    </div>
   );
 }
 
@@ -72,7 +35,7 @@ export function Settings() {
   const [connStatus, setConnStatus] = useState<{ ok: boolean; msg: string } | null>(null);
   const [testing, setTesting] = useState(false);
 
-  // Polling intervals (stored in SQLite, read by useQueries)
+  // Polling intervals
   const { data: savedContainerInterval } = useQuery({
     queryKey: ["setting", "poll_containers"],
     queryFn: () => ipc.getSetting("poll_containers"),
@@ -85,6 +48,7 @@ export function Settings() {
   });
   const [containerInterval, setContainerInterval] = useState(5000);
   const [statsInterval, setStatsInterval] = useState(3000);
+  const [intervalSaved, setIntervalSaved] = useState(false);
 
   useEffect(() => {
     if (savedContainerInterval) setContainerInterval(Number(savedContainerInterval));
@@ -94,12 +58,10 @@ export function Settings() {
   }, [savedStatsInterval]);
 
   // Clear data
-  const [clearing, setClearing] = useState(false);
   const [confirmClear, setConfirmClear] = useState(false);
+  const [clearing, setClearing] = useState(false);
 
-  // Updater
-  const [checkingUpdate, setCheckingUpdate] = useState(false);
-  const [updateStatus, setUpdateStatus] = useState<string | null>(null);
+
 
   useEffect(() => {
     ipc.getAppInfo().then(setInfo).catch(() => {});
@@ -126,32 +88,19 @@ export function Settings() {
       ]);
       qc.invalidateQueries({ queryKey: ["setting", "poll_containers"] });
       qc.invalidateQueries({ queryKey: ["setting", "poll_stats"] });
+      setIntervalSaved(true);
+      setTimeout(() => setIntervalSaved(false), 2000);
     } catch (e) {
-      console.error("Failed to persist poll intervals to DB:", e);
+      console.error("Failed to persist poll intervals:", e);
     }
     qc.removeQueries({ queryKey: ["containers"] });
     qc.removeQueries({ queryKey: ["host-stats"] });
   }
 
-  async function handleCheckUpdate() {
-    setCheckingUpdate(true);
-    setUpdateStatus(null);
-    try {
-      const update = await check();
-      if (update?.available) {
-        setUpdateStatus(`Update available: v${update.version}`);
-        await update.downloadAndInstall();
-      } else {
-        setUpdateStatus("You are on the latest version.");
-      }
-    } catch {
-      setUpdateStatus("Could not check for updates.");
-    } finally {
-      setCheckingUpdate(false);
-    }
-  }
 
-  async function handleClearEnvVars() {    setClearing(true);
+
+  async function handleClearEnvVars() {
+    setClearing(true);
     try {
       await ipc.clearAllEnvVars();
       qc.invalidateQueries({ queryKey: ["env-vars"] });
@@ -162,159 +111,134 @@ export function Settings() {
   }
 
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: "1.5rem", maxWidth: 600 }}>
-      <h1 style={{ fontSize: 18, fontWeight: 700, color: "var(--text)", margin: 0 }}>Settings</h1>
+    <div className="flex flex-col gap-5 max-w-[600px]">
+      <h1 className="text-[18px] font-bold text-text m-0">Settings</h1>
 
       {/* Docker Connection */}
-      <section style={card}>
-        <h2 style={secTitle}>Docker Connection</h2>
-        <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+      <Card>
+        <div className="border-b border-border-light pb-3 mb-3">
+          <span className="text-[11px] font-mono uppercase tracking-[1.2px] text-text-3">Docker Connection</span>
+        </div>
+        <div className="flex flex-col gap-3">
           <div>
-            <label style={{ ...sublabel, display: "block", marginBottom: 6 }}>
-              Socket path (leave blank for default)
+            <label className="text-[11px] text-text-3 block mb-1.5">
+              Socket path <span className="text-text-3/60">(leave blank for default)</span>
             </label>
-            <div style={{ display: "flex", gap: 8 }}>
+            <div className="flex gap-2">
               <input
                 value={socketPath}
                 onChange={(e) => setSocketPath(e.target.value)}
                 placeholder="/var/run/docker.sock"
-                style={{
-                  flex: 1, background: "var(--surface-2)", border: "1px solid var(--border)",
-                  borderRadius: 4, padding: "6px 10px", color: "var(--text)",
-                  fontSize: 12, fontFamily: "var(--font-mono)", outline: "none",
-                }}
+                className="flex-1 bg-surface-2 border border-border rounded px-3 py-1.5 text-[12px] text-text font-mono outline-none focus:border-green focus:ring-1 focus:ring-green/30 transition-colors placeholder:text-text-3"
               />
-              <Btn onClick={handleTestConnection} disabled={testing}>
-                {testing ? "Testing…" : "Test"}
-              </Btn>
+              <Button onClick={handleTestConnection} loading={testing} variant="primary" size="sm">
+                {testing ? "Testing" : "Test"}
+              </Button>
             </div>
           </div>
           {connStatus && (
-            <div style={{
-              fontSize: 12, fontFamily: "var(--font-mono)", padding: "6px 10px", borderRadius: 4,
-              background: connStatus.ok ? "var(--green-dim)" : "var(--error-dim)",
-              color: connStatus.ok ? "var(--green)" : "var(--error)",
-              border: `1px solid ${connStatus.ok ? "var(--green-border)" : "rgba(255,180,171,0.3)"}`,
-            }}>
+            <div
+              className={`text-[12px] font-mono px-3 py-2 rounded border ${
+                connStatus.ok
+                  ? "text-green bg-green-dim border-green-border"
+                  : "text-error bg-error-dim border-error-border"
+              }`}
+            >
               {connStatus.ok ? "✓ " : "✗ "}{connStatus.msg}
             </div>
           )}
         </div>
-      </section>
+      </Card>
 
       {/* Polling Intervals */}
-      <section style={card}>
-        <h2 style={secTitle}>Polling Intervals</h2>
-        <div style={{ display: "flex", flexDirection: "column", gap: 0 }}>
-          <div style={row}>
-            <div>
-              <div style={label}>Container list</div>
-              <div style={sublabel}>How often to refresh the container list</div>
-            </div>
-            <select
-              value={containerInterval}
-              onChange={(e) => setContainerInterval(Number(e.target.value))}
-              style={{ background: "var(--surface-2)", border: "1px solid var(--border)", borderRadius: 4, padding: "5px 8px", color: "var(--text)", fontSize: 12, fontFamily: "var(--font-mono)", outline: "none" }}
-            >
-              {[2000, 5000, 10000, 30000].map((v) => (
-                <option key={v} value={v}>{v / 1000}s</option>
-              ))}
-            </select>
-          </div>
-          <div style={{ ...row, borderBottom: "none" }}>
-            <div>
-              <div style={label}>Host stats</div>
-              <div style={sublabel}>How often to refresh CPU / RAM / disk</div>
-            </div>
-            <select
-              value={statsInterval}
-              onChange={(e) => setStatsInterval(Number(e.target.value))}
-              style={{ background: "var(--surface-2)", border: "1px solid var(--border)", borderRadius: 4, padding: "5px 8px", color: "var(--text)", fontSize: 12, fontFamily: "var(--font-mono)", outline: "none" }}
-            >
-              {[1000, 3000, 5000, 10000].map((v) => (
-                <option key={v} value={v}>{v / 1000}s</option>
-              ))}
-            </select>
-          </div>
+      <Card>
+        <div className="border-b border-border-light pb-3 mb-1">
+          <span className="text-[11px] font-mono uppercase tracking-[1.2px] text-text-3">Polling Intervals</span>
         </div>
-        <div style={{ marginTop: 12 }}>
-          <Btn onClick={saveIntervals}>Save intervals</Btn>
+        <SettingRow label="Container list" sublabel="How often to refresh the container list">
+          <Select
+            value={containerInterval}
+            onChange={(e) => setContainerInterval(Number(e.target.value))}
+            aria-label="Container polling interval"
+          >
+            {[2000, 5000, 10000, 30000].map((v) => (
+              <option key={v} value={v}>{v / 1000}s</option>
+            ))}
+          </Select>
+        </SettingRow>
+        <SettingRow label="Host stats" sublabel="How often to refresh CPU / RAM / disk">
+          <Select
+            value={statsInterval}
+            onChange={(e) => setStatsInterval(Number(e.target.value))}
+            aria-label="Stats polling interval"
+          >
+            {[1000, 3000, 5000, 10000].map((v) => (
+              <option key={v} value={v}>{v / 1000}s</option>
+            ))}
+          </Select>
+        </SettingRow>
+        <div className="flex items-center gap-3 mt-3">
+          <Button onClick={saveIntervals} variant="primary" size="sm">
+            Save intervals
+          </Button>
+          {intervalSaved && (
+            <span className="text-[11px] text-green font-mono animate-[fade-in_0.2s_ease]">
+              ✓ Saved
+            </span>
+          )}
         </div>
-      </section>
+      </Card>
 
       {/* Data */}
-      <section style={card}>
-        <h2 style={secTitle}>Data</h2>
-        <div style={{ display: "flex", flexDirection: "column", gap: 0 }}>
-          {info && (
-            <div style={row}>
-              <div>
-                <div style={label}>Database path</div>
-                <div style={{ ...sublabel, fontFamily: "var(--font-mono)", marginTop: 4 }}>{info.db_path}</div>
-              </div>
-            </div>
-          )}
-          <div style={{ ...row, borderBottom: "none" }}>
-            <div>
-              <div style={label}>Clear all environment variables</div>
-              <div style={sublabel}>Permanently deletes all env vars across all scopes</div>
-            </div>
-            <Btn
-              onClick={() => setConfirmClear(true)}
-              color="var(--error)" bg="var(--error-dim)" border="rgba(255,180,171,0.3)"
-            >
-              Clear all
-            </Btn>
-          </div>
+      <Card>
+        <div className="border-b border-border-light pb-3 mb-1">
+          <span className="text-[11px] font-mono uppercase tracking-[1.2px] text-text-3">Data</span>
         </div>
-      </section>
+        {info && (
+          <SettingRow label="Database path">
+            <span className="text-[11px] font-mono text-text-3 max-w-[260px] truncate" title={info.db_path}>
+              {info.db_path}
+            </span>
+          </SettingRow>
+        )}
+        <SettingRow
+          label="Clear all environment variables"
+          sublabel="Permanently deletes all env vars across all scopes"
+        >
+          <Button variant="danger" size="sm" onClick={() => setConfirmClear(true)}>
+            Clear all
+          </Button>
+        </SettingRow>
+      </Card>
 
       {/* About */}
-      <section style={card}>
-        <h2 style={secTitle}>About</h2>
-        <div style={{ display: "flex", flexDirection: "column", gap: 0 }}>
-          {[
-            { label: "Version", value: info?.version ?? "…" },
-            { label: "License", value: "MIT" },
-            { label: "Source", value: "github.com/pallab-js/devlocal" },
-          ].map(({ label: l, value }, i, arr) => (
-            <div key={l} style={{ ...row, borderBottom: i < arr.length - 1 ? "1px solid var(--border-light)" : "none" }}>
-              <span style={label}>{l}</span>
-              <span style={{ fontSize: 12, color: "var(--text-3)", fontFamily: "var(--font-mono)" }}>{value}</span>
-            </div>
-          ))}
-          <div style={{ ...row, borderBottom: "none", marginTop: 8 }}>
-            <div>
-              <div style={label}>Updates</div>
-              {updateStatus && <div style={{ ...sublabel, color: updateStatus.startsWith("Update") ? "var(--green)" : "var(--text-3)" }}>{updateStatus}</div>}
-            </div>
-            <Btn onClick={handleCheckUpdate} disabled={checkingUpdate}>
-              {checkingUpdate ? "Checking…" : "Check for updates"}
-            </Btn>
-          </div>
+      <Card>
+        <div className="border-b border-border-light pb-3 mb-1">
+          <span className="text-[11px] font-mono uppercase tracking-[1.2px] text-text-3">About</span>
         </div>
-      </section>
+        {[
+          { label: "Version", value: info?.version ?? "…" },
+          { label: "License", value: "MIT" },
+          { label: "Source", value: "github.com/pallab-js/devlocal" },
+        ].map(({ label, value }) => (
+          <SettingRow key={label} label={label}>
+            <span className="text-[12px] font-mono text-text-3">{value}</span>
+          </SettingRow>
+        ))}
 
-      {/* Confirm clear dialog */}
-      {confirmClear && (
-        <div
-          onClick={() => setConfirmClear(false)}
-          style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.6)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 100 }}
-        >
-          <div onClick={(e) => e.stopPropagation()} style={{ background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 10, padding: "1.5rem", width: 360 }}>
-            <p style={{ color: "var(--text)", fontSize: 14, fontWeight: 600, margin: "0 0 8px" }}>Clear all env vars?</p>
-            <p style={{ color: "var(--text-3)", fontSize: 13, margin: "0 0 1.25rem" }}>
-              This will permanently delete every environment variable across all scopes. This cannot be undone.
-            </p>
-            <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
-              <Btn onClick={() => setConfirmClear(false)} color="var(--text-2)" bg="var(--surface-2)" border="var(--border)">Cancel</Btn>
-              <Btn onClick={handleClearEnvVars} disabled={clearing} color="var(--error)" bg="var(--error-dim)" border="rgba(255,180,171,0.3)">
-                {clearing ? "Clearing…" : "Clear all"}
-              </Btn>
-            </div>
-          </div>
-        </div>
-      )}
+      </Card>
+
+      {/* Confirm clear modal */}
+      <ConfirmModal
+        open={confirmClear}
+        onClose={() => setConfirmClear(false)}
+        onConfirm={handleClearEnvVars}
+        title="Clear all env vars?"
+        message="This will permanently delete every environment variable across all scopes. This action cannot be undone."
+        confirmLabel="Clear all"
+        variant="danger"
+        loading={clearing}
+      />
     </div>
   );
 }
