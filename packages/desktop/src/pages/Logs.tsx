@@ -56,22 +56,17 @@ function formatTs(ts: string): string {
   }
 }
 
+function escapeRegex(s: string): string {
+  return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
 function highlightText(text: string, query: string): React.ReactNode {
   if (!query) return text;
-  const parts = text.split(new RegExp(`(${query})`, "gi"));
-  return (
-    <>
-      {parts.map((part, i) =>
-        part.toLowerCase() === query.toLowerCase() ? (
-          <mark key={i} className="bg-yellow-500/40 text-yellow-200">
-            {part}
-          </mark>
-        ) : (
-          part
-        )
-      )}
-    </>
-  );
+  const escaped = escapeRegex(query);
+  const parts = text.split(new RegExp(`(${escaped})`, "gi"));
+  return (<>{parts.map((part, i) => part.toLowerCase() === query.toLowerCase() ? (
+    <mark key={i} className="bg-yellow-500/40 text-yellow-200">{part}</mark>
+  ) : part)}</>);
 }
 
 export function Logs() {
@@ -269,7 +264,7 @@ export function Logs() {
           {streaming && (
             <button
               onClick={() => {
-                ipc.stopLogs();
+                ipc.stopLogs().catch(() => {});
                 setStreaming(false);
               }}
               style={iconBtn("var(--orange)", "var(--orange-dim)")}

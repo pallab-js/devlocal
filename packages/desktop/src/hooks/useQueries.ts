@@ -1,8 +1,17 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { ipc } from "../lib/ipc";
 
+function useSetting(key: string, fallback: string) {
+  return useQuery({
+    queryKey: ["setting", key],
+    queryFn: () => ipc.getSetting(key),
+    staleTime: Infinity,
+    select: (data) => Number(data ?? fallback),
+  });
+}
+
 export function useContainers(paused = false) {
-  const interval = Number(localStorage.getItem("poll_containers") ?? 5000);
+  const { data: interval = 5000 } = useSetting("poll_containers", "5000");
   return useQuery({
     queryKey: ["containers"],
     queryFn: () => ipc.listContainers(),
@@ -22,7 +31,7 @@ export function useContainerMutations() {
 }
 
 export function useHostStats(paused = false) {
-  const interval = Number(localStorage.getItem("poll_stats") ?? 3000);
+  const { data: interval = 3000 } = useSetting("poll_stats", "3000");
   return useQuery({
     queryKey: ["host-stats"],
     queryFn: () => ipc.getHostStats(),
@@ -46,7 +55,10 @@ export function useEnvVarMutations() {
       ipc.upsertEnvVar(key, value, scope),
     onSuccess: invalidate,
   });
-  const remove = useMutation({ mutationFn: ipc.deleteEnvVar, onSuccess: invalidate });
+  const remove = useMutation({
+    mutationFn: ({ id, scope }: { id: number; scope: string }) => ipc.deleteEnvVar(id, scope),
+    onSuccess: invalidate,
+  });
 
   return { upsert, remove };
 }

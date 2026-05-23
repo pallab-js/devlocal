@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { useQueryClient } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { check } from "@tauri-apps/plugin-updater";
 import { ipc, type AppInfo } from "../lib/ipc";
 
@@ -72,13 +72,26 @@ export function Settings() {
   const [connStatus, setConnStatus] = useState<{ ok: boolean; msg: string } | null>(null);
   const [testing, setTesting] = useState(false);
 
-  // Polling intervals (stored in localStorage, read by useQueries via custom event)
-  const [containerInterval, setContainerInterval] = useState(() =>
-    Number(localStorage.getItem("poll_containers") ?? 5000)
-  );
-  const [statsInterval, setStatsInterval] = useState(() =>
-    Number(localStorage.getItem("poll_stats") ?? 3000)
-  );
+  // Polling intervals (stored in SQLite, read by useQueries)
+  const { data: savedContainerInterval } = useQuery({
+    queryKey: ["setting", "poll_containers"],
+    queryFn: () => ipc.getSetting("poll_containers"),
+    staleTime: Infinity,
+  });
+  const { data: savedStatsInterval } = useQuery({
+    queryKey: ["setting", "poll_stats"],
+    queryFn: () => ipc.getSetting("poll_stats"),
+    staleTime: Infinity,
+  });
+  const [containerInterval, setContainerInterval] = useState(5000);
+  const [statsInterval, setStatsInterval] = useState(3000);
+
+  useEffect(() => {
+    if (savedContainerInterval) setContainerInterval(Number(savedContainerInterval));
+  }, [savedContainerInterval]);
+  useEffect(() => {
+    if (savedStatsInterval) setStatsInterval(Number(savedStatsInterval));
+  }, [savedStatsInterval]);
 
   // Clear data
   const [clearing, setClearing] = useState(false);
@@ -106,13 +119,13 @@ export function Settings() {
   }
 
   async function saveIntervals() {
-    localStorage.setItem("poll_containers", String(containerInterval));
-    localStorage.setItem("poll_stats", String(statsInterval));
     try {
       await Promise.all([
         ipc.setSetting("poll_containers", String(containerInterval)),
         ipc.setSetting("poll_stats", String(statsInterval)),
       ]);
+      qc.invalidateQueries({ queryKey: ["setting", "poll_containers"] });
+      qc.invalidateQueries({ queryKey: ["setting", "poll_stats"] });
     } catch (e) {
       console.error("Failed to persist poll intervals to DB:", e);
     }

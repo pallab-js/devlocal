@@ -1,3 +1,5 @@
+import { useEffect, useState } from "react";
+import { ipc } from "../../lib/ipc";
 import { useTheme } from "../../hooks/useTheme";
 
 const SunIcon = () => (
@@ -42,6 +44,11 @@ const MoonIcon = () => (
 
 export function TopBar() {
   const { theme, toggleTheme } = useTheme();
+  const [appVersion, setAppVersion] = useState("");
+
+  useEffect(() => {
+    ipc.getAppInfo().then((info) => setAppVersion(info.version)).catch(() => {});
+  }, []);
 
   return (
     <header
@@ -106,7 +113,7 @@ export function TopBar() {
             fontFamily: "var(--font-mono)",
           }}
         >
-          v0.2.0
+          v{appVersion || "0.2.0"}
         </span>
       </div>
     </header>

@@ -1,5 +1,20 @@
-@import url("https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700&family=Space+Grotesk:wght@400;500&display=swap");
 @import "tailwindcss";
+
+@font-face {
+  font-family: "Plus Jakarta Sans";
+  font-style: normal;
+  font-weight: 400 700;
+  font-display: swap;
+  src: url("/fonts/PlusJakartaSans.woff2") format("woff2");
+}
+
+@font-face {
+  font-family: "Space Grotesk";
+  font-style: normal;
+  font-weight: 400 500;
+  font-display: swap;
+  src: url("/fonts/SpaceGrotesk.woff2") format("woff2");
+}
 
 @theme {
   --color-bg: var(--bg);
@@ -29,12 +44,15 @@
   --bg-deep: #f3f4f6;
   --surface: #ffffff;
   --surface-hi: #f9fafb;
+  --surface-1: #f9fafb;
   --surface-2: #f3f4f6;
   --surface-3: #e5e7eb;
   --border: #e5e7eb;
   --border-hi: #d1d5db;
   --border-light: #f3f4f6;
   --green: #10b981;
+  --blue: #3b82f6;
+  --blue-dim: rgba(59, 130, 246, 0.15);
   --text: #111827;
   --text-2: #4b5563;
   --text-3: #9ca3af;
@@ -49,12 +67,15 @@
   --bg-deep: #0f0f0f;
   --surface: #131313;
   --surface-hi: #1c1c1c;
+  --surface-1: #1c1c1c;
   --surface-2: #202020;
   --surface-3: #2a2a2a;
   --border: #2e2e2e;
   --border-hi: #363636;
   --border-light: #242424;
   --green: #3ecf8e;
+  --blue: #60a5fa;
+  --blue-dim: rgba(96, 165, 250, 0.15);
   --text: #fafafa;
   --text-2: #b4b4b4;
   --text-3: #898989;

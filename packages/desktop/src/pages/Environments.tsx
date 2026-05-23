@@ -339,7 +339,7 @@ export function Environments() {
             </p>
             <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
               <button onClick={() => setConfirmDelete(null)} style={{ padding: "6px 14px", borderRadius: 4, border: "1px solid var(--border)", background: "var(--surface-2)", color: "var(--text-2)", cursor: "pointer", fontSize: 12 }}>Cancel</button>
-              <button onClick={() => { remove.mutate(Number(confirmDelete.id)); setConfirmDelete(null); }} style={{ padding: "6px 14px", borderRadius: 4, border: "1px solid var(--error)", background: "var(--error-dim)", color: "var(--error)", cursor: "pointer", fontSize: 12, fontWeight: 600 }}>Delete</button>
+              <button onClick={() => { remove.mutate({ id: Number(confirmDelete.id), scope: confirmDelete.scope }); setConfirmDelete(null); }} style={{ padding: "6px 14px", borderRadius: 4, border: "1px solid var(--error)", background: "var(--error-dim)", color: "var(--error)", cursor: "pointer", fontSize: 12, fontWeight: 600 }}>Delete</button>
             </div>
           </div>
         </div>

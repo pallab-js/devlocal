@@ -40,11 +40,14 @@ function ImageRow({ img, onRemove, style }: {
   );
 }
 
+interface ConfirmState { message: string; onConfirm: () => void }
+
 export default function Images() {
   const [search, setSearch] = useState("");
   const debouncedSearch = useDebounce(search, 300);
   const parentRef = useRef<HTMLDivElement>(null);
   const [isPulling, setIsPulling] = useState(false);
+  const [confirm, setConfirm] = useState<ConfirmState | null>(null);
 
   const { data: images, isLoading, error, refetch } = useImages();
   const { remove, prune } = useImageMutations();
@@ -67,9 +70,10 @@ export default function Images() {
   });
 
   const handlePrune = async () => {
-    if (confirm("Prune all unused images?")) {
-      await prune.mutateAsync();
-    }
+    setConfirm({
+      message: "Prune all unused images?",
+      onConfirm: () => { prune.mutateAsync(); setConfirm(null); },
+    });
   };
 
   return (
@@ -126,11 +130,10 @@ export default function Images() {
                     <ImageRow 
                       key={img.id} 
                       img={img}
-                      onRemove={() => {
-                        if (confirm(`Delete image ${img.repo_tags?.[0] || img.id}?`)) {
-                          remove.mutate({ id: img.id });
-                        }
-                      }}
+                      onRemove={() => setConfirm({
+                        message: `Delete image ${img.repo_tags?.[0] || img.id}?`,
+                        onConfirm: () => { remove.mutate({ id: img.id }); setConfirm(null); },
+                      })}
                       style={{
                         position: 'absolute',
                         top: 0,
@@ -149,6 +152,26 @@ export default function Images() {
       </section>
 
       {isPulling && <PullModal onClose={() => { setIsPulling(false); refetch(); }} />}
+
+      {confirm && (
+        <div onClick={() => setConfirm(null)} className="fixed inset-0 bg-black/60 flex items-center justify-center z-[100] backdrop-blur-sm">
+          <div onClick={(e) => e.stopPropagation()} className="bg-surface border border-border rounded-xl p-6 w-full max-w-sm shadow-2xl">
+            <p className="text-text text-[14px] font-semibold m-0 mb-4">{confirm.message}</p>
+            <div className="flex gap-2 justify-end">
+              <button onClick={() => setConfirm(null)}
+                className="px-3 py-1.5 rounded text-[12px] font-mono cursor-pointer"
+                style={{ border: "1px solid var(--border)", background: "var(--surface-2)", color: "var(--text-2)" }}>
+                Cancel
+              </button>
+              <button onClick={confirm.onConfirm}
+                className="px-3 py-1.5 rounded text-[12px] font-mono cursor-pointer font-medium"
+                style={{ border: "1px solid var(--error)", background: "var(--error-dim)", color: "var(--error)" }}>
+                Delete
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

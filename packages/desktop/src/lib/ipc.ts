@@ -36,7 +36,7 @@ export const ipc = {
   listEnvVars: (scope?: string) => invoke<EnvVar[]>("list_env_vars", { scope: scope ?? null }),
   upsertEnvVar: (key: string, value: string, scope: string) =>
     invoke<EnvVar>("upsert_env_var", { key, value, scope }),
-  deleteEnvVar: (id: number) => invoke<void>("delete_env_var", { id }),
+  deleteEnvVar: (id: number, scope: string) => invoke<void>("delete_env_var", { id, scope }),
   importEnvFile: (content: string, scope: string) => invoke<number>("import_env_file", { content, scope }),
   importSecrets: (content: string, format: string, scope: string) => invoke<number>("import_secrets", { content, format, scope }),
   exportEnvScope: (scope: string) => invoke<string>("export_env_scope", { scope }),

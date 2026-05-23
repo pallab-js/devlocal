@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { ipc, type ContainerDetails, type ContainerStats } from "../lib/ipc";
+import { useToast } from "./Toast";
 
 interface Props {
   containerId: string;
@@ -10,6 +11,20 @@ export function ContainerDetailsModal({ containerId, onClose }: Props) {
   const [details, setDetails] = useState<ContainerDetails | null>(null);
   const [stats, setStats] = useState<ContainerStats | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [masked, setMasked] = useState<Set<string>>(new Set());
+
+  function toggleMask(key: string) {
+    setMasked((prev) => {
+      const next = new Set(prev);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      return next;
+    });
+  }
+
+  function isMasked(key: string) {
+    return !masked.has(key) && SENSITIVE_RE.test(key);
+  }
 
   useEffect(() => {
     ipc.inspectContainer(containerId)
@@ -69,11 +84,24 @@ export function ContainerDetailsModal({ containerId, onClose }: Props) {
               <div className="mt-2">
                 <div className={labelClass}>Environment</div>
                 <div className="flex flex-col gap-1 mt-1.5">
-                  {details.env.map((e, i) => (
-                    <code key={i} className="text-[11px] text-green font-mono bg-bg-deep px-2 py-0.5 rounded border border-border-light overflow-hidden text-ellipsis">
-                      {e}
-                    </code>
-                  ))}
+                  {details.env.map((raw, i) => {
+                    const eqIdx = raw.indexOf("=");
+                    const key = eqIdx > 0 ? raw.slice(0, eqIdx) : "";
+                    const value = eqIdx > 0 ? raw.slice(eqIdx + 1) : raw;
+                    const hidden = isMasked(key);
+                    return (
+                      <code key={i} className="flex items-center gap-2 text-[11px] text-green font-mono bg-bg-deep px-2 py-0.5 rounded border border-border-light overflow-hidden text-ellipsis">
+                        <span>{key}={hidden ? "••••••••" : value}</span>
+                        {key && SENSITIVE_RE.test(key) && (
+                          <button onClick={() => toggleMask(key)}
+                            className="bg-none border-none text-text-3 cursor-pointer text-[10px] font-mono p-0 shrink-0 hover:text-text-2 transition-colors"
+                            style={{ background: "none", border: "none", cursor: "pointer", fontFamily: "var(--font-mono)", fontSize: 10, padding: 0, color: "var(--text-3)" }}>
+                            {hidden ? "show" : "hide"}
+                          </button>
+                        )}
+                      </code>
+                    );
+                  })}
                 </div>
               </div>
             )}
@@ -113,10 +141,13 @@ function StatBar({ label, value, pct, max }: { label: string; value: string; pct
 
 const labelClass = "text-[10px] font-mono uppercase tracking-wider text-text-3";
 
+const SENSITIVE_RE = /secret|password|token|key|pwd|pass|auth|credential/i;
+
 function LimitsEditor({ containerId, initialCpu, initialMem }: { containerId: string, initialCpu: number | null, initialMem?: number }) {
   const [cpu, setCpu] = useState(initialCpu?.toString() ?? "");
   const [mem, setMem] = useState(initialMem?.toString() ?? "");
   const [loading, setLoading] = useState(false);
+  const { toast } = useToast();
 
   const handleUpdate = async () => {
     setLoading(true);
@@ -124,9 +155,9 @@ function LimitsEditor({ containerId, initialCpu, initialMem }: { containerId: st
       const cpuShares = cpu ? parseInt(cpu) : undefined;
       const memoryBytes = mem ? parseInt(mem) * 1024 * 1024 : undefined;
       await ipc.updateContainerLimits(containerId, cpuShares, memoryBytes);
-      alert("Limits updated successfully");
+      toast("Limits updated successfully", "success");
     } catch (e) {
-      alert(`Error updating limits: ${e}`);
+      toast(`Error updating limits: ${e}`, "error");
     } finally {
       setLoading(false);
     }
