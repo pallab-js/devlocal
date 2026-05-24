@@ -12,3 +12,7 @@ export * from "./types/NetworkContainer";
 export * from "./types/NetworkInfo";
 export * from "./types/PullProgress";
 export * from "./types/VolumeInfo";
+export * from "./types/DbTableColumn";
+export * from "./types/DbTable";
+export * from "./types/DbSchema";
+export * from "./types/DbQueryResult";

@@ -2,12 +2,12 @@ import { invoke } from "@tauri-apps/api/core";
 import type {
   AppError, AppInfo, ContainerInfo, ContainerDetails, ContainerStats, DockerEvent,
   EnvVar, HostStats, ImageInfo, LogLine, NetworkContainer, NetworkInfo,
-  PullProgress, VolumeInfo,
+  PullProgress, VolumeInfo, DbSchema, DbQueryResult, DbTable,
 } from "@devopslocal/shared";
 export type {
   AppError, AppInfo, ContainerInfo, ContainerDetails, ContainerStats, DockerEvent,
   EnvVar, HostStats, ImageInfo, LogLine, NetworkContainer, NetworkInfo,
-  PullProgress, VolumeInfo,
+  PullProgress, VolumeInfo, DbSchema, DbQueryResult, DbTable,
 };
 
 export function isAppError(e: unknown): e is AppError {
@@ -55,4 +55,6 @@ export const ipc = {
   inspectVolume: (name: string) => invoke<Record<string, unknown>>("inspect_volume", { name }),
   getSetting: (key: string) => invoke<string | null>("get_setting", { key }),
   setSetting: (key: string, value: string) => invoke<void>("set_setting", { key, value }),
+  dbConnect: (path: string) => invoke<DbSchema>("db_connect", { path }),
+  dbExecuteQuery: (path: string, sql: string) => invoke<DbQueryResult>("db_execute_query", { path, sql }),
 };

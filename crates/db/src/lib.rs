@@ -1,4 +1,5 @@
 pub mod commands;
+pub mod explorer;
 
 use serde::{Deserialize, Serialize};
 use sqlx::{sqlite::SqlitePoolOptions, SqlitePool};

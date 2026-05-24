@@ -125,6 +125,8 @@ pub fn run(context: tauri::Context) {
             settings::get_app_info,
             settings::test_docker_connection,
             db::get_db_pool_stats,
+            db::db_connect,
+            db::db_execute_query,
         ])
         .run(context)
         .expect("error while running tauri application");
@@ -159,5 +161,9 @@ mod tests {
         let _ = <ImageInfo as TS>::decl();
         let _ = <PullProgress as TS>::decl();
         let _ = <LogLine as TS>::decl();
+        let _ = <db::explorer::DbTableColumn as TS>::decl();
+        let _ = <db::explorer::DbTable as TS>::decl();
+        let _ = <db::explorer::DbSchema as TS>::decl();
+        let _ = <db::explorer::DbQueryResult as TS>::decl();
     }
 }

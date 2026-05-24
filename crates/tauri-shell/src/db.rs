@@ -70,3 +70,17 @@ pub async fn get_db_pool_stats() -> Result<db::DbPoolStats> {
         .await
         .map_err(crate::error::AppError::Generic)
 }
+
+#[tauri::command]
+pub async fn db_connect(path: String) -> Result<db::explorer::DbSchema> {
+    db::explorer::discover_schema(&path)
+        .await
+        .map_err(crate::error::AppError::Generic)
+}
+
+#[tauri::command]
+pub async fn db_execute_query(path: String, sql: String) -> Result<db::explorer::DbQueryResult> {
+    db::explorer::execute_query(&path, &sql)
+        .await
+        .map_err(crate::error::AppError::Generic)
+}

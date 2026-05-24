@@ -11,6 +11,7 @@ import { Logs } from "./pages/Logs";
 import { Network } from "./pages/Network";
 import { Volumes } from "./pages/Volumes";
 import { Settings } from "./pages/Settings";
+import { Database } from "./pages/Database";
 import { ipc } from "./lib/ipc";
 import { useAppStore } from "./store/useAppStore";
 
@@ -41,6 +42,7 @@ const ROUTES: Record<string, string> = {
   "5": "/settings",
   "6": "/images",
   "7": "/volumes",
+  "8": "/db",
 };
 
 const SHORTCUT_LABELS: { keys: string[]; label: string }[] = [
@@ -51,6 +53,7 @@ const SHORTCUT_LABELS: { keys: string[]; label: string }[] = [
   { keys: ["⌘", "5"], label: "Settings" },
   { keys: ["⌘", "6"], label: "Images" },
   { keys: ["⌘", "7"], label: "Volumes" },
+  { keys: ["⌘", "8"], label: "Database Explorer" },
 ];
 
 function KeyboardShortcuts() {
@@ -199,6 +202,7 @@ export default function App() {
           <Route path="network" element={<ErrorBoundary><Network /></ErrorBoundary>} />
           <Route path="volumes" element={<ErrorBoundary><Volumes /></ErrorBoundary>} />
           <Route path="settings" element={<ErrorBoundary><Settings /></ErrorBoundary>} />
+          <Route path="db" element={<ErrorBoundary><Database /></ErrorBoundary>} />
         </Route>
       </Routes>
     </ToastProvider>
