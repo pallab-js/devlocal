@@ -1,4 +1,7 @@
+import { useMemo } from "react";
 import { NavLink } from "react-router-dom";
+import { useContainers } from "../../hooks/useQueries";
+import { useAppStore } from "../../store/useAppStore";
 
 /* ── SVG Icons (Lucide-sourced, inline for zero dependency) ──────────────── */
 
@@ -63,22 +66,54 @@ const SettingsIcon = () => (
 
 /* ── Navigation Definition ───────────────────────────────────────────────── */
 
-const NAV = [
-  { to: "/",            label: "Dashboard",   icon: DashboardIcon, shortcut: "⌘1" },
-  { to: "/environments",label: "Environments",icon: EnvIcon,        shortcut: "⌘3" },
-  { to: "/images",      label: "Images",      icon: ImagesIcon,     shortcut: "⌘6" },
-  { to: "/logs",        label: "Logs",        icon: LogsIcon,       shortcut: "⌘2" },
-  { to: "/network",     label: "Network",     icon: NetworkIcon,    shortcut: "⌘4" },
-  { to: "/volumes",     label: "Volumes",     icon: VolumesIcon,    shortcut: "⌘7" },
-  { to: "/settings",    label: "Settings",    icon: SettingsIcon,   shortcut: "⌘5" },
+const SECTIONS = [
+  {
+    title: "Workspace",
+    items: [
+      { to: "/", label: "Dashboard", icon: DashboardIcon },
+      { to: "/logs", label: "Logs", icon: LogsIcon },
+    ],
+  },
+  {
+    title: "Development",
+    items: [
+      { to: "/environments", label: "Environments", icon: EnvIcon },
+    ],
+  },
+  {
+    title: "Infrastructure",
+    items: [
+      { to: "/images", label: "Images", icon: ImagesIcon },
+      { to: "/volumes", label: "Volumes", icon: VolumesIcon },
+      { to: "/network", label: "Network", icon: NetworkIcon },
+    ],
+  },
+  {
+    title: "System",
+    items: [
+      { to: "/settings", label: "Settings", icon: SettingsIcon },
+    ],
+  },
 ];
 
 /* ── Component ───────────────────────────────────────────────────────────── */
 
 export function SideNav() {
+  const { data: containers } = useContainers();
+  const { activeProject, setActiveProject } = useAppStore();
+
+  const projects = useMemo(() => {
+    if (!containers) return [];
+    const set = new Set<string>();
+    containers.forEach((c) => {
+      if (c.compose_project) set.add(c.compose_project);
+    });
+    return Array.from(set).sort();
+  }, [containers]);
+
   return (
     <nav
-      className="w-[210px] bg-bg-deep border-r border-border flex flex-col shrink-0"
+      className="w-[210px] bg-bg-deep border-r border-border flex flex-col shrink-0 select-none"
       aria-label="Main navigation"
     >
       {/* Logo / Wordmark */}
@@ -88,56 +123,86 @@ export function SideNav() {
           style={{ boxShadow: "0 0 8px var(--green)" }}
           aria-hidden="true"
         />
-        <span
-          className="font-mono text-[14px] font-bold text-green tracking-tight select-none"
-        >
+        <span className="font-mono text-[14px] font-bold text-green tracking-tight select-none">
           DevOpsLocal
         </span>
       </div>
 
-      {/* Nav Items */}
-      <div className="flex flex-col py-2 flex-1">
-        {NAV.map(({ to, label, icon: Icon }) => (
-          <NavLink
-            key={to}
-            to={to}
-            end={to === "/"}
-            aria-current={undefined /* set by NavLink's isActive */}
-            className={({ isActive }: { isActive: boolean }) =>
-              [
-                "group flex items-center gap-2.5 px-3.5 py-2 mx-2 my-0.5 rounded-lg text-[13px] font-medium transition-all duration-150 no-underline relative",
-                isActive
-                  ? "text-green bg-green/10 shadow-[inset_0_0_0_1px_rgba(var(--color-green)/0.2)]"
-                  : "text-text-3 hover:text-text-2 hover:bg-surface-2",
-              ].join(" ")
-            }
-          >
-            {({ isActive }: { isActive: boolean }) => (
-              <>
-                {/* Active left accent bar */}
-                {isActive && (
-                  <span
-                    className="absolute left-0 top-1/2 -translate-y-1/2 w-0.5 h-4 rounded-r bg-green"
-                    aria-hidden="true"
-                  />
+      {/* Dynamic Project Workspace Selector */}
+      <div className="px-3.5 py-3 border-b border-border-light flex flex-col gap-1.5 bg-bg-deep/50">
+        <label className="text-[9px] font-mono font-bold uppercase tracking-wider text-text-3 select-none">
+          Project Workspace
+        </label>
+        <select
+          value={activeProject}
+          onChange={(e) => setActiveProject(e.target.value)}
+          className="w-full bg-surface border border-border rounded px-2.5 py-1.5 text-[11px] text-text font-mono outline-none focus:border-green focus:ring-1 focus:ring-green/30 transition-all cursor-pointer hover:bg-surface-2"
+          aria-label="Select active project workspace"
+        >
+          <option value="all">🌐 All Projects</option>
+          {projects.map((p) => (
+            <option key={p} value={p}>
+              📦 {p}
+            </option>
+          ))}
+        </select>
+      </div>
+
+      {/* Nav Items Grouped by Section */}
+      <div className="flex flex-col py-3 flex-1 overflow-y-auto gap-4">
+        {SECTIONS.map((section) => (
+          <div key={section.title} className="flex flex-col gap-0.5">
+            <span className="px-4 text-[9px] font-mono font-bold uppercase tracking-wider text-text-3/65 mb-1 select-none">
+              {section.title}
+            </span>
+            {section.items.map(({ to, label, icon: Icon }) => (
+              <NavLink
+                key={to}
+                to={to}
+                end={to === "/"}
+                className={({ isActive }: { isActive: boolean }) =>
+                  [
+                    "group flex items-center gap-2.5 px-3.5 py-2 mx-2 my-0.5 rounded-lg text-[13px] font-medium transition-all duration-150 no-underline relative",
+                    isActive
+                      ? "text-green bg-green/10 shadow-[inset_0_0_0_1px_rgba(var(--color-green)/0.2)] font-semibold"
+                      : "text-text-3 hover:text-text-2 hover:bg-surface-2",
+                  ].join(" ")
+                }
+              >
+                {({ isActive }: { isActive: boolean }) => (
+                  <>
+                    {/* Active left accent bar */}
+                    {isActive && (
+                      <span
+                        className="absolute left-0 top-1/2 -translate-y-1/2 w-0.5 h-4 rounded-r bg-green"
+                        aria-hidden="true"
+                      />
+                    )}
+                    <span
+                      className={`shrink-0 transition-colors ${
+                        isActive ? "text-green" : "text-text-3 group-hover:text-text-2"
+                      }`}
+                      aria-hidden="true"
+                    >
+                      <Icon />
+                    </span>
+                    <span className="truncate">{label}</span>
+                  </>
                 )}
-                <span
-                  className={`shrink-0 transition-colors ${isActive ? "text-green" : "text-text-3 group-hover:text-text-2"}`}
-                  aria-hidden="true"
-                >
-                  <Icon />
-                </span>
-                <span className="truncate">{label}</span>
-              </>
-            )}
-          </NavLink>
+              </NavLink>
+            ))}
+          </div>
         ))}
       </div>
 
       {/* Footer hint */}
-      <div className="px-4 py-3 border-t border-border-light">
+      <div className="px-4 py-3 border-t border-border-light bg-bg-deep">
         <p className="text-[10px] font-mono text-text-3 m-0">
-          Press <kbd className="bg-surface-3 border border-border px-1 rounded text-[9px]">?</kbd> for shortcuts
+          Press{" "}
+          <kbd className="bg-surface-3 border border-border px-1 rounded text-[9px]">
+            ?
+          </kbd>{" "}
+          for shortcuts
         </p>
       </div>
     </nav>

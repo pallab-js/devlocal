@@ -10,6 +10,7 @@ import { Skeleton } from "../components/Skeleton";
 import { ContainerDetailsModal } from "../components/ContainerDetailsModal";
 import { Link } from "react-router-dom";
 import { useDebounce } from "../hooks/useDebounce";
+import { useAppStore } from "../store/useAppStore";
 
 const STATE_CONFIG: Record<string, string> = {
   running:    "text-green bg-green/10 border-green/30",
@@ -74,6 +75,37 @@ function ContainerRow({ c, onStart, onStop, onRestart, onDetails, style }: {
   );
 }
 
+interface RawLogPayload {
+  container_id: string;
+  ts: string;
+  text: string;
+}
+
+interface DashboardLogLine {
+  id: number;
+  ts: string;
+  text: string;
+  level: "ALL" | "DEBUG" | "INFO" | "WARN" | "ERROR";
+  containerName: string;
+}
+
+function detectLevel(text: string): "ALL" | "DEBUG" | "INFO" | "WARN" | "ERROR" {
+  const u = text.toUpperCase();
+  if (u.includes("ERROR") || u.includes(" ERR ") || u.includes("[ERR]")) return "ERROR";
+  if (u.includes("WARN") || u.includes("[WRN]")) return "WARN";
+  if (u.includes("DEBUG") || u.includes("[DBG]")) return "DEBUG";
+  return "INFO";
+}
+
+function formatTs(ts: string): string {
+  if (!ts) return "";
+  try {
+    return new Date(ts).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" });
+  } catch {
+    return ts.slice(11, 19);
+  }
+}
+
 const cardClass = "bg-surface border border-border rounded-lg p-4 md:p-5";
 const secTitleClass = "text-[11px] font-mono uppercase tracking-[1.2px] text-text-3 mb-4 block";
 
@@ -131,6 +163,112 @@ export function Dashboard() {
   const { data: stats, isLoading: sLoading } = useHostStats(paused);
   const { data: networks } = useNetworkTopology();
 
+  const activeProject = useAppStore((s) => s.activeProject);
+  const [drawerExpanded, setDrawerExpanded] = useState(false);
+  const [lines, setLines] = useState<DashboardLogLine[]>([]);
+  const [filter, setFilter] = useState<"ALL" | "DEBUG" | "INFO" | "WARN" | "ERROR">("ALL");
+  const [autoScroll, setAutoScroll] = useState(true);
+  const logIdRef = useRef(0);
+  const scrollRef = useRef<HTMLDivElement>(null);
+
+  // Auto-scroll logic
+  useEffect(() => {
+    if (autoScroll && scrollRef.current) {
+      scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
+    }
+  }, [lines, autoScroll, drawerExpanded]);
+
+  // Compute container name mapping dynamically
+  const containerNames = useMemo(() => {
+    const m: Record<string, string> = {};
+    containers?.forEach((c) => (m[c.id] = c.name));
+    return m;
+  }, [containers]);
+
+  // Determine running containers in the current active project
+  const runningProjectContainerIds = useMemo(() => {
+    if (!containers) return [];
+    return containers
+      .filter((c) => {
+        if (c.state !== "running") return false;
+        if (activeProject !== "all" && c.compose_project !== activeProject) return false;
+        return true;
+      })
+      .map((c) => c.id);
+  }, [containers, activeProject]);
+
+  // Handle active logs subscription
+  useEffect(() => {
+    if (runningProjectContainerIds.length === 0) {
+      ipc.stopLogs().catch(() => {});
+      return;
+    }
+
+    runningProjectContainerIds.forEach((id) => {
+      ipc.streamLogs(id, 50).catch(() => {});
+    });
+
+    let active = true;
+    let unlistenFn: (() => void) | null = null;
+
+    listen<RawLogPayload>("log-line", (event) => {
+      if (active) {
+        logIdRef.current += 1;
+        const lineId = logIdRef.current;
+        const { container_id, ts, text } = event.payload;
+
+        // Filter incoming log lines based on the active project container list
+        if (runningProjectContainerIds.includes(container_id)) {
+          setLines((prev) => [
+            ...prev.slice(-1999),
+            {
+              id: lineId,
+              ts,
+              text,
+              level: detectLevel(text),
+              containerName: containerNames[container_id] ?? container_id,
+            },
+          ]);
+        }
+      }
+    }).then((fn) => {
+      if (!active) {
+        fn();
+      } else {
+        unlistenFn = fn;
+      }
+    });
+
+    return () => {
+      active = false;
+      if (unlistenFn) {
+        try {
+          unlistenFn();
+        } catch (e) {
+          console.error("Error unlistening log-line in dashboard:", e);
+        }
+      }
+      ipc.stopLogs().catch(() => {});
+    };
+  }, [runningProjectContainerIds, containerNames]);
+
+  // Reset lines when project changes
+  useEffect(() => {
+    setLines([]);
+  }, [activeProject]);
+
+  // Bind keydown shortcut ⌘L
+  useEffect(() => {
+    const handleKey = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "l") {
+        e.preventDefault();
+        setDrawerExpanded((v) => !v);
+      }
+    };
+    window.addEventListener("keydown", handleKey);
+    return () => window.removeEventListener("keydown", handleKey);
+  }, []);
+
   async function getOrPickComposeDir(projectName: string): Promise<string | null> {
     // Check if we have a saved directory for this project
     const settingKey = `compose_dir__${projectName}`;
@@ -187,14 +325,27 @@ export function Dashboard() {
 
   const filteredContainers = useMemo(() => {
     if (!containers) return [];
-    if (!debouncedSearch) return containers;
+    
+    let items = containers;
+    if (activeProject !== "all") {
+      items = containers.filter(c => c.compose_project === activeProject);
+    }
+    
+    if (!debouncedSearch) return items;
     const s = debouncedSearch.toLowerCase();
-    return containers.filter(c => 
+    return items.filter(c => 
       c.name.toLowerCase().includes(s) || 
       c.image.toLowerCase().includes(s) ||
       (c.compose_project && c.compose_project.toLowerCase().includes(s))
     );
-  }, [containers, debouncedSearch]);
+  }, [containers, debouncedSearch, activeProject]);
+
+  const visibleLines = useMemo(() => {
+    return lines.filter((l) => {
+      if (filter !== "ALL" && l.level !== filter) return false;
+      return true;
+    });
+  }, [lines, filter]);
 
   const rowVirtualizer = useVirtualizer({
     count: filteredContainers.length,
@@ -361,13 +512,132 @@ export function Dashboard() {
             ))}
           </div>
         </section>
-      )}
+      )}      {/* Live Console Drawer */}
+      <div 
+        className={`border border-border rounded-xl bg-bg-deep flex flex-col transition-all duration-300 shadow-xl overflow-hidden shrink-0 mt-4 ${
+          drawerExpanded ? "h-[320px]" : "h-[40px]"
+        }`}
+      >
+        {/* Drawer Header */}
+        <div 
+          onClick={() => setDrawerExpanded(!drawerExpanded)}
+          className="flex items-center justify-between px-4 py-2 bg-surface-hi border-b border-border cursor-pointer select-none"
+        >
+          <div className="flex items-center gap-2">
+            <span className="text-[11px] font-mono font-bold text-violet flex items-center gap-1.5">
+              <span className="w-2.5 h-2.5 rounded bg-violet animate-pulse" />
+              Live Console Logs
+            </span>
+            {activeProject !== "all" && (
+              <span className="text-[9px] font-mono bg-violet/10 text-violet px-1.5 py-0.5 rounded border border-violet/20">
+                📦 {activeProject}
+              </span>
+            )}
+          </div>
+          
+          <div className="flex items-center gap-3" onClick={(e) => e.stopPropagation()}>
+            {/* Level Selector */}
+            {drawerExpanded && (
+              <div className="flex items-center gap-1 bg-surface-3 border border-border p-0.5 rounded">
+                {(["ALL", "DEBUG", "INFO", "WARN", "ERROR"] as const).map((l) => (
+                  <button
+                    key={l}
+                    onClick={() => setFilter(l)}
+                    className={`text-[9px] font-mono px-2 py-0.5 rounded border transition-colors cursor-pointer ${
+                      filter === l 
+                        ? l === "ERROR" ? "bg-error-dim border-error-border text-error font-semibold"
+                          : l === "WARN" ? "bg-orange-dim border-orange-border text-orange font-semibold"
+                          : l === "DEBUG" ? "bg-surface border-border-hi text-text-3 font-semibold"
+                          : "bg-surface border-border-hi text-text-2 font-semibold"
+                        : "bg-transparent border-transparent text-text-3 hover:text-text-2 hover:bg-surface"
+                    }`}
+                  >
+                    {l}
+                  </button>
+                ))}
+              </div>
+            )}
+
+            {/* Clear and Auto Scroll */}
+            {drawerExpanded && (
+              <>
+                <button
+                  onClick={() => setLines([])}
+                  className="text-[10px] font-mono text-text-3 hover:text-text-2 border border-border bg-surface px-2 py-0.5 rounded cursor-pointer transition-colors"
+                >
+                  Clear
+                </button>
+                <label className="flex items-center gap-1.5 text-[10px] font-mono text-text-3 cursor-pointer select-none">
+                  <input
+                    type="checkbox"
+                    checked={autoScroll}
+                    onChange={(e) => setAutoScroll(e.target.checked)}
+                    className="accent-green border border-border rounded cursor-pointer w-3 h-3"
+                  />
+                  Auto-scroll
+                </label>
+              </>
+            )}
+
+            {/* Toggle icon */}
+            <span className="text-[10px] text-text-3 font-mono">
+              {drawerExpanded ? "▼" : "▲"}
+            </span>
+          </div>
+        </div>
+
+        {/* Drawer Console Output */}
+        {drawerExpanded && (
+          <div 
+            ref={scrollRef}
+            className="flex-1 p-3 overflow-y-auto font-mono text-[12px] bg-bg-deep text-text-2 leading-relaxed"
+          >
+            {visibleLines.length === 0 ? (
+              <p className="text-text-3 text-center my-10 italic">
+                {runningProjectContainerIds.length === 0 
+                  ? "No running containers in active workspace." 
+                  : "Streaming logs... Console is empty."}
+              </p>
+            ) : (
+              <div className="flex flex-col gap-1">
+                {visibleLines.map((l) => (
+                  <div key={l.id} className="flex gap-2.5 items-start py-0.5 hover:bg-surface-3/30 px-1 rounded transition-all">
+                    <span className="text-[10px] text-text-3 shrink-0 select-none">
+                      {formatTs(l.ts)}
+                    </span>
+                    <span 
+                      className="text-[10px] font-mono font-semibold px-1.5 py-0.5 rounded bg-surface border border-border shrink-0 select-none text-violet/80"
+                      title={l.containerName}
+                    >
+                      {l.containerName}
+                    </span>
+                    <span 
+                      className={`text-[10px] font-mono uppercase tracking-wider shrink-0 select-none ${
+                        l.level === "ERROR" ? "text-error" : l.level === "WARN" ? "text-orange" : l.level === "DEBUG" ? "text-text-3" : "text-green"
+                      }`}
+                    >
+                      {l.level}
+                    </span>
+                    <span 
+                      className="break-all whitespace-pre-wrap flex-1 text-text-2"
+                      style={{
+                        color: l.level === "ERROR" ? "var(--error)" : l.level === "WARN" ? "var(--orange)" : undefined
+                      }}
+                    >
+                      {l.text}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+      </div>
 
       {detailsId && <ContainerDetailsModal containerId={detailsId} onClose={() => setDetailsId(null)} />}
     </div>
   );
 }
-
 function StatItem({ label, value, pct, max }: { label: string; value: string; pct: number; max: number }) {
   return (
     <div className="flex flex-col gap-1.5">

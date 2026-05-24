@@ -8,6 +8,10 @@ interface AppState {
   /** The container ID currently selected in the details modal */
   activeContainerId: string | null;
   setActiveContainerId: (id: string | null) => void;
+
+  /** The currently selected workspace/compose project filter */
+  activeProject: string;
+  setActiveProject: (project: string) => void;
 }
 
 export const useAppStore = create<AppState>()((set) => ({
@@ -16,4 +20,7 @@ export const useAppStore = create<AppState>()((set) => ({
 
   activeContainerId: null,
   setActiveContainerId: (id) => set({ activeContainerId: id }),
+
+  activeProject: "all",
+  setActiveProject: (project) => set({ activeProject: project }),
 }));
