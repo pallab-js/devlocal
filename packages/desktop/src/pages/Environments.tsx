@@ -214,7 +214,14 @@ export function Environments() {
           <Field
             label="Key"
             value={editing ? editing.key : form.key}
-            onChange={(v) => { setFormError(""); editing ? setEditing({ ...editing, key: v }) : setForm({ ...form, key: v }); }}
+            onChange={(v) => {
+              setFormError("");
+              if (editing) {
+                setEditing({ ...editing, key: v });
+              } else {
+                setForm({ ...form, key: v });
+              }
+            }}
             placeholder="API_KEY"
             disabled={!!editing}
           />

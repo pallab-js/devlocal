@@ -1,4 +1,4 @@
-use sqlx::{sqlite::SqliteConnectOptions, Connection, Row, SqliteConnection, TypeInfo, Column};
+use sqlx::{sqlite::SqliteConnectOptions, Column, Connection, Row, SqliteConnection, TypeInfo};
 use std::time::Instant;
 
 #[derive(serde::Serialize, ts_rs::TS, Debug, Clone)]
@@ -42,7 +42,7 @@ pub async fn discover_schema(db_path: &str) -> std::result::Result<DbSchema, Str
 
     // Query tables in SQLite
     let tables_rows = sqlx::query(
-        "SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%';"
+        "SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%';",
     )
     .fetch_all(&mut conn)
     .await
@@ -51,7 +51,7 @@ pub async fn discover_schema(db_path: &str) -> std::result::Result<DbSchema, Str
     let mut tables = Vec::new();
     for row in tables_rows {
         let table_name: String = row.get("name");
-        
+
         // Get column details for table using table_info pragma
         let column_query = format!("PRAGMA table_info({});", table_name);
         let columns_rows = sqlx::query(&column_query)
@@ -119,7 +119,7 @@ pub async fn execute_query(db_path: &str, sql: &str) -> std::result::Result<DbQu
         let mut row_obj = serde_json::Map::new();
         for col in row.columns() {
             let name = col.name();
-            
+
             // Try to extract value from row based on column type
             let val = match col.type_info().name() {
                 "TEXT" | "VARCHAR" | "CHAR" | "CLOB" => {
@@ -159,7 +159,9 @@ pub async fn execute_query(db_path: &str, sql: &str) -> std::result::Result<DbQu
                 "BLOB" => {
                     let bytes: Option<Vec<u8>> = row.try_get(name).ok();
                     match bytes {
-                        Some(val) => serde_json::Value::String(format!("<BLOB: {} bytes>", val.len())),
+                        Some(val) => {
+                            serde_json::Value::String(format!("<BLOB: {} bytes>", val.len()))
+                        }
                         None => serde_json::Value::Null,
                     }
                 }
@@ -199,10 +201,12 @@ mod tests {
             .create_if_missing(true);
         let mut conn = SqliteConnection::connect_with(&opts).await.unwrap();
 
-        sqlx::query("CREATE TABLE users (id INTEGER PRIMARY KEY, name TEXT NOT NULL, age INTEGER);")
-            .execute(&mut conn)
-            .await
-            .unwrap();
+        sqlx::query(
+            "CREATE TABLE users (id INTEGER PRIMARY KEY, name TEXT NOT NULL, age INTEGER);",
+        )
+        .execute(&mut conn)
+        .await
+        .unwrap();
 
         sqlx::query("INSERT INTO users (name, age) VALUES ('Alice', 30);")
             .execute(&mut conn)
@@ -218,8 +222,13 @@ mod tests {
         assert!(schema.tables[0].columns[0].pk);
 
         // 2. Execute Query
-        let query_res = execute_query(db_path, "SELECT * FROM users;").await.unwrap();
-        assert_eq!(query_res.columns, vec!["id".to_string(), "name".to_string(), "age".to_string()]);
+        let query_res = execute_query(db_path, "SELECT * FROM users;")
+            .await
+            .unwrap();
+        assert_eq!(
+            query_res.columns,
+            vec!["id".to_string(), "name".to_string(), "age".to_string()]
+        );
         assert_eq!(query_res.rows.len(), 1);
 
         let row = query_res.rows[0].as_object().unwrap();

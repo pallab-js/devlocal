@@ -242,7 +242,9 @@ pub async fn stream_docker_events(
                         let _ = app.emit("docker-event", ev);
                     }
                     Err(e) => {
-                        eprintln!("Docker event stream error: {e} — reconnecting in {backoff_secs}s");
+                        eprintln!(
+                            "Docker event stream error: {e} — reconnecting in {backoff_secs}s"
+                        );
                         break;
                     }
                 }
@@ -253,10 +255,7 @@ pub async fn stream_docker_events(
         }
     });
 
-    let mut guard = event_state
-        .0
-        .lock()
-        .unwrap_or_else(|p| p.into_inner());
+    let mut guard = event_state.0.lock().unwrap_or_else(|p| p.into_inner());
     if let Some(old) = guard.take() {
         old.abort();
     }
@@ -396,7 +395,10 @@ pub fn start_health_monitor(app: AppHandle, docker: Arc<Docker>) {
     tokio::spawn(async move {
         // Emit initial status immediately on startup — don't make the frontend wait 5s
         let online = docker.ping().await.is_ok();
-        let _ = app.emit("app:dockerd-status", serde_json::json!({ "online": online }));
+        let _ = app.emit(
+            "app:dockerd-status",
+            serde_json::json!({ "online": online }),
+        );
 
         loop {
             tokio::time::sleep(std::time::Duration::from_secs(5)).await;

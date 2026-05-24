@@ -226,7 +226,7 @@ export function Database() {
     if (!result?.rows) return [];
     if (!gridFilter.trim()) return result.rows;
     const term = gridFilter.toLowerCase();
-    return result.rows.filter((row: any) => {
+    return result.rows.filter((row: Record<string, unknown>) => {
       return Object.values(row).some((val) =>
         String(val).toLowerCase().includes(term)
       );
@@ -625,7 +625,7 @@ export function Database() {
                         </tr>
                       </thead>
                       <tbody>
-                        {filteredRows.map((row: any, rIdx) => (
+                        {filteredRows.map((row: Record<string, unknown>, rIdx) => (
                           <tr
                             key={rIdx}
                             className="border-b border-border-light hover:bg-surface-hi/40 transition-colors"

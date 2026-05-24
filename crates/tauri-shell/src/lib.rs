@@ -3,7 +3,9 @@ pub mod docker;
 pub mod error;
 pub mod settings;
 
-use crate::docker::{DiskState, DockerState, EventStreamState, LogStreamState, PullState, SysState};
+use crate::docker::{
+    DiskState, DockerState, EventStreamState, LogStreamState, PullState, SysState,
+};
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 use std::time::Instant;
