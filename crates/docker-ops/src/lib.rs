@@ -19,7 +19,7 @@ pub use error::DockerError;
 // ── Types ────────────────────────────────────────────────────────────────────
 
 #[derive(Debug, Serialize, Deserialize, Clone, TS)]
-#[ts(export, export_to = "../../packages/shared/types/")]
+#[ts(export, export_to = "../../../packages/shared/types/")]
 pub struct ContainerInfo {
     pub id: String,
     pub name: String,
@@ -33,7 +33,7 @@ pub struct ContainerInfo {
 }
 
 #[derive(Debug, Serialize, Deserialize, TS)]
-#[ts(export, export_to = "../../packages/shared/types/")]
+#[ts(export, export_to = "../../../packages/shared/types/")]
 pub struct ContainerDetails {
     pub id: String,
     pub name: String,
@@ -49,7 +49,7 @@ pub struct ContainerDetails {
 }
 
 #[derive(Debug, Serialize, Deserialize, TS)]
-#[ts(export, export_to = "../../packages/shared/types/")]
+#[ts(export, export_to = "../../../packages/shared/types/")]
 pub struct HostStats {
     pub cpu_percent: f64,
     #[ts(type = "number")]
@@ -61,7 +61,7 @@ pub struct HostStats {
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone, TS)]
-#[ts(export, export_to = "../../packages/shared/types/")]
+#[ts(export, export_to = "../../../packages/shared/types/")]
 pub struct DockerEvent {
     pub kind: String,
     pub action: String,
@@ -71,7 +71,7 @@ pub struct DockerEvent {
 }
 
 #[derive(Debug, Serialize, Deserialize, TS)]
-#[ts(export, export_to = "../../packages/shared/types/")]
+#[ts(export, export_to = "../../../packages/shared/types/")]
 pub struct ContainerStats {
     pub cpu_percent: f64,
     #[ts(type = "number")]
@@ -81,7 +81,7 @@ pub struct ContainerStats {
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone, TS)]
-#[ts(export, export_to = "../../packages/shared/types/")]
+#[ts(export, export_to = "../../../packages/shared/types/")]
 pub struct ImageInfo {
     pub id: String,
     pub repo_tags: Vec<String>,
@@ -92,7 +92,7 @@ pub struct ImageInfo {
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone, TS)]
-#[ts(export, export_to = "../../packages/shared/types/")]
+#[ts(export, export_to = "../../../packages/shared/types/")]
 pub struct PullProgress {
     pub id: Option<String>,
     pub status: Option<String>,
@@ -104,7 +104,7 @@ pub struct PullProgress {
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone, TS)]
-#[ts(export, export_to = "../../packages/shared/types/")]
+#[ts(export, export_to = "../../../packages/shared/types/")]
 pub struct LogLine {
     pub container_id: String,
     pub ts: String,
@@ -112,7 +112,7 @@ pub struct LogLine {
 }
 
 #[derive(Debug, Serialize, Deserialize, TS)]
-#[ts(export, export_to = "../../packages/shared/types/")]
+#[ts(export, export_to = "../../../packages/shared/types/")]
 pub struct NetworkContainer {
     pub name: String,
     pub ipv4: String,
@@ -120,7 +120,7 @@ pub struct NetworkContainer {
 }
 
 #[derive(Debug, Serialize, Deserialize, TS)]
-#[ts(export, export_to = "../../packages/shared/types/")]
+#[ts(export, export_to = "../../../packages/shared/types/")]
 pub struct NetworkInfo {
     pub id: String,
     pub name: String,
@@ -132,7 +132,7 @@ pub struct NetworkInfo {
 }
 
 #[derive(Debug, Serialize, Deserialize, TS)]
-#[ts(export, export_to = "../../packages/shared/types/")]
+#[ts(export, export_to = "../../../packages/shared/types/")]
 pub struct VolumeInfo {
     pub name: String,
     pub driver: String,
@@ -365,6 +365,40 @@ pub fn get_host_stats_with_disks(sys: &mut System, disks: &Disks) -> HostStats {
     }
 }
 
+/// Refresh only CPU usage. Call this on a steady background cadence (≥ the
+/// sysinfo minimum CPU update interval) so that [`read_host_stats`] can report
+/// a meaningful CPU percentage without blocking the caller.
+pub fn refresh_cpu(sys: &mut System) {
+    sys.refresh_cpu_usage();
+}
+
+/// Read host stats using the CPU delta accumulated by a background refresher.
+///
+/// Unlike [`get_host_stats_with_disks`], this does NOT refresh CPU usage — it
+/// reads the value computed since the last background [`refresh_cpu`], so the
+/// command can return immediately instead of sleeping ~200 ms to establish a
+/// CPU delta on every call. Memory is cheap and refreshed inline.
+pub fn read_host_stats(sys: &mut System, disks: &Disks) -> HostStats {
+    sys.refresh_memory();
+    let cpu_percent = sys.global_cpu_usage() as f64;
+    let mem_used_mb = sys.used_memory() / 1024 / 1024;
+    let mem_total_mb = sys.total_memory() / 1024 / 1024;
+
+    let (disk_used, disk_total) = disks.iter().fold((0u64, 0u64), |(u, t), d| {
+        (
+            u + (d.total_space() - d.available_space()),
+            t + d.total_space(),
+        )
+    });
+    HostStats {
+        cpu_percent,
+        mem_used_mb,
+        mem_total_mb,
+        disk_used_gb: disk_used as f64 / 1_073_741_824.0,
+        disk_total_gb: disk_total as f64 / 1_073_741_824.0,
+    }
+}
+
 pub async fn get_network_topology(docker: &Docker) -> Result<Vec<NetworkInfo>, DockerError> {
     let networks = docker.list_networks::<String>(None).await?;
     Ok(networks
@@ -476,7 +510,7 @@ pub async fn list_volumes(docker: &Docker) -> Result<Vec<VolumeInfo>, DockerErro
             name: v.name,
             driver: v.driver,
             mountpoint: v.mountpoint,
-            scope: v.scope.map(|s| format!("{:?}", s)).unwrap_or_default(),
+            scope: v.scope.map(|s| s.to_string()).unwrap_or_default(),
             created: v.created_at.unwrap_or_default(),
         })
         .collect())
@@ -531,7 +565,35 @@ pub async fn inspect_volume(docker: &Docker, name: &str) -> Result<serde_json::V
     serde_json::to_value(vol).map_err(|e| DockerError::Other(e.to_string()))
 }
 
+/// Validate a Docker Compose project name against Compose's naming rules:
+/// it must start with a lowercase letter or digit and contain only lowercase
+/// letters, digits, dashes, and underscores. This runs before shelling out to
+/// `docker compose` so a crafted value can't collide with unrelated projects or
+/// produce confusing CLI behavior.
+pub fn validate_project_name(name: &str) -> Result<(), DockerError> {
+    if name.is_empty() {
+        return Err(DockerError::Other("Project name is required".into()));
+    }
+    let mut chars = name.chars();
+    let first = chars.next().unwrap();
+    if !(first.is_ascii_lowercase() || first.is_ascii_digit()) {
+        return Err(DockerError::Other(
+            "Project name must start with a lowercase letter or digit".into(),
+        ));
+    }
+    if !name
+        .chars()
+        .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-' || c == '_')
+    {
+        return Err(DockerError::Other(
+            "Project name may only contain lowercase letters, digits, '-', and '_'".into(),
+        ));
+    }
+    Ok(())
+}
+
 pub async fn compose_up(project_name: &str, config_dir: &str) -> Result<(), DockerError> {
+    validate_project_name(project_name)?;
     let output = tokio::process::Command::new("docker")
         .arg("compose")
         .arg("--project-name")
@@ -553,6 +615,7 @@ pub async fn compose_up(project_name: &str, config_dir: &str) -> Result<(), Dock
 }
 
 pub async fn compose_down(project_name: &str, config_dir: &str) -> Result<(), DockerError> {
+    validate_project_name(project_name)?;
     let output = tokio::process::Command::new("docker")
         .arg("compose")
         .arg("--project-name")
@@ -597,4 +660,32 @@ pub fn pull_image(
             })
             .map_err(DockerError::Bollard)
         })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_validate_project_name_accepts_valid() {
+        for n in ["myproject", "web-app", "app_1", "0abc", "a", "my-stack_2"] {
+            assert!(validate_project_name(n).is_ok(), "should accept: {n}");
+        }
+    }
+
+    #[test]
+    fn test_validate_project_name_rejects_invalid() {
+        for n in [
+            "",          // empty
+            "-leading",  // starts with dash
+            "_leading",  // starts with underscore
+            "Upper",     // uppercase not allowed by Compose
+            "has space", // space
+            "has/slash", // path separator
+            "name;rm",   // shell metacharacter
+            "a.b",       // dot
+        ] {
+            assert!(validate_project_name(n).is_err(), "should reject: {n:?}");
+        }
+    }
 }

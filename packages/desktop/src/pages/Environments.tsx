@@ -1,7 +1,7 @@
 import { useState, useRef } from "react";
 import { useEnvVars, useEnvVarMutations } from "../hooks/useQueries";
 import { useToast } from "../components/Toast";
-import { ipc } from "../lib/ipc";
+import { ipc, isAppError } from "../lib/ipc";
 import { open } from "@tauri-apps/plugin-dialog";
 import { readTextFile } from "@tauri-apps/plugin-fs";
 import { Skeleton } from "../components/Skeleton";
@@ -11,7 +11,27 @@ import { Button } from "../components/ui/Button";
 import { ConfirmModal } from "../components/ui/Modal";
 
 const SCOPES = ["global", "development", "staging", "production"];
-const SENSITIVE_RE = /secret|password|token|key|pwd|pass|auth|credential/i;
+// Keep in sync with `is_sensitive` in crates/db/src/lib.rs: match whole
+// underscore-delimited segments, and treat PUBLIC_KEY / *_PUB as non-sensitive.
+const SENSITIVE_SEGMENTS = new Set([
+  "secret", "password", "token", "key", "pwd", "pass", "auth", "credential", "credentials",
+]);
+const PUBLIC_SEGMENTS = new Set(["public", "pub"]);
+
+function isSensitiveKey(key: string): boolean {
+  const segments = key.toLowerCase().split("_").filter(Boolean);
+  if (segments.some((s) => PUBLIC_SEGMENTS.has(s))) return false;
+  return segments.some((s) => SENSITIVE_SEGMENTS.has(s));
+}
+
+/** Build a human-readable import summary, naming any skipped keys. */
+function importSummary(imported: number, skipped: string[], scope: string): string {
+  const base = `Imported ${imported} variable(s) into "${scope}".`;
+  if (!skipped.length) return base;
+  const preview = skipped.slice(0, 5).join(", ");
+  const more = skipped.length > 5 ? ` (+${skipped.length - 5} more)` : "";
+  return `${base} Skipped ${skipped.length} invalid key(s): ${preview}${more}.`;
+}
 
 export function Environments() {
   const [scope, setScope] = useState("global");
@@ -20,7 +40,7 @@ export function Environments() {
   const [confirmDelete, setConfirmDelete] = useState<EnvVar | null>(null);
   const [search, setSearch] = useState("");
   const debouncedSearch = useDebounce(search, 300);
-  const [masked, setMasked] = useState<Set<bigint>>(new Set());
+  const [masked, setMasked] = useState<Set<number>>(new Set());
   const [formError, setFormError] = useState("");
   const fileRef = useRef<HTMLInputElement>(null);
   const [importMenuOpen, setImportMenuOpen] = useState(false);
@@ -29,7 +49,7 @@ export function Environments() {
   const { data: vars, isLoading } = useEnvVars(scope);
   const { upsert, remove } = useEnvVarMutations();
 
-  function toggleMask(id: bigint) {
+  function toggleMask(id: number) {
     setMasked((prev) => {
       const next = new Set(prev);
       if (next.has(id)) next.delete(id); else next.add(id);
@@ -38,7 +58,7 @@ export function Environments() {
   }
 
   function isMasked(v: EnvVar) {
-    return !masked.has(v.id) && SENSITIVE_RE.test(v.key);
+    return !masked.has(v.id) && isSensitiveKey(v.key);
   }
 
   function validate(key: string): string {
@@ -59,7 +79,18 @@ export function Environments() {
     setFormError("");
     upsert.mutate(
       { key, value, scope: targetScope },
-      { onSuccess: () => { setForm({ key: "", value: "", scope: "global" }); setEditing(null); } },
+      {
+        onSuccess: () => { setForm({ key: "", value: "", scope: "global" }); setEditing(null); },
+        onError: (e) => {
+          // A server-side validation failure belongs on the form; anything
+          // else (storage/keychain) is surfaced as a toast.
+          if (isAppError(e) && e.code === "Validation") {
+            setFormError(e.message);
+          } else {
+            toast(isAppError(e) ? e.message : String(e), "error");
+          }
+        },
+      },
     );
   }
 
@@ -68,8 +99,8 @@ export function Environments() {
     if (!file) return;
     const content = await file.text();
     try {
-      const count = await ipc.importEnvFile(content, scope);
-      toast(`Imported ${count} variable(s) into "${scope}".`, "success");
+      const { imported, skipped } = await ipc.importEnvFile(content, scope);
+      toast(importSummary(imported, skipped, scope), skipped.length ? "info" : "success");
     } catch (err) {
       toast(String(err), "error");
     }
@@ -87,8 +118,8 @@ export function Environments() {
       });
       if (!path || Array.isArray(path)) return;
       const content = await readTextFile(path);
-      const count = await ipc.importSecrets(content, format, scope);
-      toast(`Imported ${count} variable(s) from ${format} file into "${scope}".`, "success");
+      const { imported, skipped } = await ipc.importSecrets(content, format, scope);
+      toast(importSummary(imported, skipped, scope), skipped.length ? "info" : "success");
     } catch (err) {
       toast(String(err), "error");
     } finally {
@@ -119,8 +150,8 @@ export function Environments() {
     if (!file) return;
     const content = await file.text();
     try {
-      const count = await ipc.importEnvFile(content, scope);
-      toast(`Imported ${count} variable(s) into "${scope}".`, "success");
+      const { imported, skipped } = await ipc.importEnvFile(content, scope);
+      toast(importSummary(imported, skipped, scope), skipped.length ? "info" : "success");
     } catch (err) {
       toast(String(err), "error");
     }

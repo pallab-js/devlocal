@@ -20,22 +20,69 @@ pub struct LogStreamState(pub Mutex<HashMap<String, JoinHandle<()>>>);
 pub struct EventStreamState(pub Mutex<Option<JoinHandle<()>>>);
 /// Tracks the active image pull task so we can cancel it before starting a new one.
 pub struct PullState(pub Mutex<Option<JoinHandle<()>>>);
-pub struct SysState(pub Mutex<System>);
+pub struct SysState(pub Arc<Mutex<System>>);
 pub struct DiskState(pub Mutex<(Disks, Instant)>);
-pub struct DockerState(pub Option<Arc<Docker>>);
+pub struct DockerState(pub std::sync::RwLock<Option<Arc<Docker>>>);
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
 fn require_docker(state: &DockerState) -> Result<Arc<Docker>> {
     state
         .0
+        .read()
+        .map_err(|e| crate::error::AppError::Generic(e.to_string()))?
         .as_ref()
         .map(Arc::clone)
         .ok_or_else(|| crate::error::AppError::Generic("Docker daemon not connected".into()))
 }
 
-// ── Commands ─────────────────────────────────────────────────────────────────
+/// Split a Docker log line into `(timestamp, text)`.
+///
+/// With `timestamps: true`, Docker prefixes each line with an RFC3339
+/// timestamp followed by a single space. But TTY containers and some runtimes
+/// emit lines without that prefix. Rather than blindly splitting on the first
+/// space (which mangles lines like `GET /path 200`), we only treat the first
+/// token as a timestamp when it structurally looks like RFC3339. Otherwise the
+/// whole line is returned as text with an empty timestamp.
+fn split_log_timestamp(raw: &str) -> (String, String) {
+    match raw.split_once(' ') {
+        Some((head, rest)) if looks_like_rfc3339(head) => (head.to_string(), rest.to_string()),
+        _ => (String::new(), raw.to_string()),
+    }
+}
 
+/// Lightweight structural check for an RFC3339 / ISO-8601 timestamp of the form
+/// `YYYY-MM-DDThh:mm:ss[.fraction][Z|±hh:mm]` — the shape Docker emits. This
+/// avoids pulling in a date-parsing dependency just to classify a token.
+fn looks_like_rfc3339(token: &str) -> bool {
+    let bytes = token.as_bytes();
+    // Minimum: "YYYY-MM-DDThh:mm:ss" = 19 chars.
+    if bytes.len() < 19 {
+        return false;
+    }
+    let is_digit = |i: usize| bytes[i].is_ascii_digit();
+    is_digit(0)
+        && is_digit(1)
+        && is_digit(2)
+        && is_digit(3)
+        && bytes[4] == b'-'
+        && is_digit(5)
+        && is_digit(6)
+        && bytes[7] == b'-'
+        && is_digit(8)
+        && is_digit(9)
+        && (bytes[10] == b'T' || bytes[10] == b't')
+        && is_digit(11)
+        && is_digit(12)
+        && bytes[13] == b':'
+        && is_digit(14)
+        && is_digit(15)
+        && bytes[16] == b':'
+        && is_digit(17)
+        && is_digit(18)
+}
+
+// ── Commands ─────────────────────────────────────────────────────────────────
 #[tauri::command]
 pub async fn list_containers(docker: State<'_, DockerState>) -> Result<Vec<ContainerInfo>> {
     let docker = require_docker(&docker)?;
@@ -88,30 +135,40 @@ pub async fn get_host_stats(
     sys_state: State<'_, SysState>,
     disk_state: State<'_, DiskState>,
 ) -> Result<HostStats> {
-    {
-        let mut sys = sys_state
-            .0
-            .lock()
-            .map_err(|e| crate::error::AppError::Generic(e.to_string()))?;
-        sys.refresh_cpu_usage();
+    // CPU usage is kept warm by `start_host_stats_refresher`, so this reads the
+    // accumulated delta immediately instead of refreshing + sleeping 200 ms.
+    let mut sys = sys_state
+        .0
+        .lock()
+        .map_err(|e| crate::error::AppError::Generic(e.to_string()))?;
+    let mut disk_guard = disk_state
+        .0
+        .lock()
+        .map_err(|e| crate::error::AppError::Generic(e.to_string()))?;
+    if disk_guard.1.elapsed() > std::time::Duration::from_secs(10) {
+        disk_guard.0.refresh(true);
+        disk_guard.1 = Instant::now();
     }
-    tokio::time::sleep(std::time::Duration::from_millis(200)).await;
-    let stats = {
-        let mut sys = sys_state
-            .0
-            .lock()
-            .map_err(|e| crate::error::AppError::Generic(e.to_string()))?;
-        let mut disk_guard = disk_state
-            .0
-            .lock()
-            .map_err(|e| crate::error::AppError::Generic(e.to_string()))?;
-        if disk_guard.1.elapsed() > std::time::Duration::from_secs(10) {
-            disk_guard.0.refresh(true);
-            disk_guard.1 = Instant::now();
+    Ok(docker_ops::read_host_stats(&mut sys, &disk_guard.0))
+}
+
+/// Keep the shared `System` CPU stats warm so `get_host_stats` can return
+/// instantly. sysinfo needs two CPU samples spaced by at least its minimum
+/// update interval to compute a non-zero percentage; refreshing on a steady
+/// background cadence satisfies that without blocking any command.
+pub fn start_host_stats_refresher(sys_state: Arc<Mutex<System>>) {
+    // Use Tauri's managed runtime rather than `tokio::spawn`, since this is
+    // called from the synchronous `setup` context where no ambient Tokio
+    // reactor is running on the current thread.
+    tauri::async_runtime::spawn(async move {
+        let interval = sysinfo::MINIMUM_CPU_UPDATE_INTERVAL.max(std::time::Duration::from_secs(1));
+        loop {
+            tokio::time::sleep(interval).await;
+            if let Ok(mut sys) = sys_state.lock() {
+                docker_ops::refresh_cpu(&mut sys);
+            }
         }
-        docker_ops::get_host_stats_with_disks(&mut sys, &disk_guard.0)
-    };
-    Ok(stats)
+    });
 }
 
 #[tauri::command]
@@ -165,11 +222,7 @@ pub async fn stream_logs(
             match result {
                 Ok(msg) => {
                     let raw = msg.to_string();
-                    let (ts, text) = if let Some(idx) = raw.find(' ') {
-                        (raw[..idx].to_string(), raw[idx + 1..].to_string())
-                    } else {
-                        (String::new(), raw)
-                    };
+                    let (ts, text) = split_log_timestamp(&raw);
                     let _ = app.emit(
                         "log-line",
                         LogLine {
@@ -409,4 +462,43 @@ pub fn start_health_monitor(app: AppHandle, docker: Arc<Docker>) {
             );
         }
     });
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{looks_like_rfc3339, split_log_timestamp};
+
+    #[test]
+    fn test_looks_like_rfc3339() {
+        assert!(looks_like_rfc3339("2024-01-02T15:04:05.123456789Z"));
+        assert!(looks_like_rfc3339("2024-01-02T15:04:05Z"));
+        assert!(looks_like_rfc3339("2024-01-02t15:04:05+05:30"));
+        assert!(!looks_like_rfc3339("GET"));
+        assert!(!looks_like_rfc3339("2024-01-02"));
+        assert!(!looks_like_rfc3339("hello-world-no-time"));
+    }
+
+    #[test]
+    fn test_split_log_timestamp_with_prefix() {
+        let (ts, text) =
+            split_log_timestamp("2024-01-02T15:04:05.000000000Z Started server on :8080");
+        assert_eq!(ts, "2024-01-02T15:04:05.000000000Z");
+        assert_eq!(text, "Started server on :8080");
+    }
+
+    #[test]
+    fn test_split_log_timestamp_without_prefix() {
+        // A TTY line without a timestamp must be kept whole, not split on the
+        // first space (which would mangle "GET /path 200").
+        let (ts, text) = split_log_timestamp("GET /path 200");
+        assert_eq!(ts, "");
+        assert_eq!(text, "GET /path 200");
+    }
+
+    #[test]
+    fn test_split_log_timestamp_no_space() {
+        let (ts, text) = split_log_timestamp("single-token");
+        assert_eq!(ts, "");
+        assert_eq!(text, "single-token");
+    }
 }

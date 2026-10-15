@@ -7,6 +7,7 @@ export * from "./types/DockerEvent";
 export * from "./types/EnvVar";
 export * from "./types/HostStats";
 export * from "./types/ImageInfo";
+export * from "./types/ImportResult";
 export * from "./types/LogLine";
 export * from "./types/NetworkContainer";
 export * from "./types/NetworkInfo";

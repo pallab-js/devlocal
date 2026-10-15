@@ -65,6 +65,7 @@ export function Settings() {
 
   useEffect(() => {
     ipc.getAppInfo().then(setInfo).catch(() => {});
+    ipc.getSetting("docker_socket").then((v) => { if (v) setSocketPath(v); }).catch(() => {});
   }, []);
 
   async function handleTestConnection() {
@@ -72,6 +73,9 @@ export function Settings() {
     setConnStatus(null);
     try {
       const msg = await ipc.testDockerConnection(socketPath || undefined);
+      // Persist the socket override so the next launch connects to it.
+      // An empty value clears the override and reverts to platform defaults.
+      await ipc.setSetting("docker_socket", socketPath.trim());
       setConnStatus({ ok: true, msg });
     } catch (e) {
       setConnStatus({ ok: false, msg: String(e) });

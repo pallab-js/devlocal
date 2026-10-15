@@ -4,8 +4,9 @@
   "version": "0.1.0",
   "type": "module",
   "scripts": {
-    "dev": "pnpm tauri dev",
-    "build": "pnpm tauri build",
+    "dev": "pnpm --filter @devopslocal/desktop tauri dev",
+    "build": "pnpm --filter @devopslocal/desktop tauri build",
+    "tauri": "pnpm --filter @devopslocal/desktop tauri",
     "test": "pnpm --filter @devopslocal/desktop test",
     "lint": "pnpm --filter @devopslocal/desktop lint",
     "format": "pnpm --filter @devopslocal/desktop format"

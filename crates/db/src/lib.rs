@@ -1,5 +1,8 @@
 pub mod commands;
+pub mod error;
 pub mod explorer;
+
+pub use error::{DbError, DbResult};
 
 use serde::{Deserialize, Serialize};
 use sqlx::{sqlite::SqlitePoolOptions, SqlitePool};
@@ -11,21 +14,86 @@ static POOL: OnceLock<SqlitePool> = OnceLock::new();
 
 pub const KEYRING_SERVICE: &str = "devopslocal";
 
-/// Regex-like check: keys matching these patterns are stored in the OS keychain.
+/// Sentinel stored in the SQLite `value` column when the real value lives in
+/// the OS keychain. The DB never holds the plaintext for sensitive keys.
+pub const KEYCHAIN_SENTINEL: &str = "__keychain__";
+
+/// Build the keychain account/entry name for a given scope + key.
+pub fn keyring_key(scope: &str, key: &str) -> String {
+    format!("{scope}:{key}")
+}
+
+/// Store a sensitive value in the OS keychain for `scope`/`key`.
+pub fn keychain_set(scope: &str, key: &str, value: &str) -> Result<(), String> {
+    let entry = keyring::Entry::new(KEYRING_SERVICE, &keyring_key(scope, key))
+        .map_err(|e| e.to_string())?;
+    entry.set_password(value).map_err(|e| e.to_string())
+}
+
+/// Read a sensitive value back from the OS keychain. Returns `Ok(None)` when
+/// no entry exists (so callers can degrade gracefully instead of failing a
+/// whole list/export).
+pub fn keychain_get(scope: &str, key: &str) -> Result<Option<String>, String> {
+    let entry = keyring::Entry::new(KEYRING_SERVICE, &keyring_key(scope, key))
+        .map_err(|e| e.to_string())?;
+    match entry.get_password() {
+        Ok(v) => Ok(Some(v)),
+        Err(keyring::Error::NoEntry) => Ok(None),
+        Err(e) => Err(e.to_string()),
+    }
+}
+
+/// Delete a sensitive value from the OS keychain. Missing entries are treated
+/// as success (idempotent cleanup).
+pub fn keychain_delete(scope: &str, key: &str) -> Result<(), String> {
+    let entry = keyring::Entry::new(KEYRING_SERVICE, &keyring_key(scope, key))
+        .map_err(|e| e.to_string())?;
+    match entry.delete_credential() {
+        Ok(()) => Ok(()),
+        Err(keyring::Error::NoEntry) => Ok(()),
+        Err(e) => Err(e.to_string()),
+    }
+}
+
+/// Patterns that mark an env var as sensitive. Matched against whole,
+/// underscore-delimited segments of the key (not raw substrings) so that
+/// benign keys like `MONKEY` or `KEYBOARD_LAYOUT` are not misclassified.
+const SENSITIVE_PATTERNS: &[&str] = &[
+    "secret",
+    "password",
+    "token",
+    "key",
+    "pwd",
+    "pass",
+    "auth",
+    "credential",
+    "credentials",
+];
+
+/// Segments that explicitly make a key NON-sensitive even if another segment
+/// matches a sensitive pattern (e.g. `PUBLIC_KEY` is public by definition).
+const NON_SENSITIVE_SEGMENTS: &[&str] = &["public", "pub"];
+
+/// Returns true if the value for `key` should be stored in the OS keychain
+/// rather than SQLite.
+///
+/// Matching is segment-based: the key is split on `_` and each segment is
+/// compared whole against the sensitive patterns. This avoids substring false
+/// positives (e.g. `MONKEY` containing "key", `BYPASS_CACHE` containing "pass").
+/// A key is treated as non-sensitive when it contains an explicit public marker
+/// such as `PUBLIC_KEY`.
 pub fn is_sensitive(key: &str) -> bool {
     let lower = key.to_lowercase();
-    [
-        "secret",
-        "password",
-        "token",
-        "key",
-        "pwd",
-        "pass",
-        "auth",
-        "credential",
-    ]
-    .iter()
-    .any(|pat| lower.contains(pat))
+    let segments: Vec<&str> = lower.split('_').filter(|s| !s.is_empty()).collect();
+
+    if segments
+        .iter()
+        .any(|seg| NON_SENSITIVE_SEGMENTS.contains(seg))
+    {
+        return false;
+    }
+
+    segments.iter().any(|seg| SENSITIVE_PATTERNS.contains(seg))
 }
 
 pub async fn init(app: &tauri::AppHandle) -> Result<(), String> {
@@ -91,7 +159,7 @@ pub fn validate_key(key: &str) -> Result<(), String> {
 }
 
 #[derive(Debug, Serialize, Deserialize, sqlx::FromRow, PartialEq, TS)]
-#[ts(export, export_to = "../../packages/shared/types/")]
+#[ts(export, export_to = "../../../packages/shared/types/")]
 pub struct EnvVar {
     #[ts(type = "number")]
     pub id: i64,
@@ -101,10 +169,20 @@ pub struct EnvVar {
 }
 
 #[derive(Debug, Serialize, Deserialize, TS)]
-#[ts(export, export_to = "../../packages/shared/types/")]
+#[ts(export, export_to = "../../../packages/shared/types/")]
 pub struct DbPoolStats {
     pub size: u32,
     pub idle: usize,
+}
+
+/// Result of an import operation. `skipped` lists keys that were present in the
+/// input but not imported (invalid key names), so the UI can tell the user
+/// exactly what was dropped instead of silently losing them.
+#[derive(Debug, Default, Serialize, Deserialize, PartialEq, TS)]
+#[ts(export, export_to = "../../../packages/shared/types/")]
+pub struct ImportResult {
+    pub imported: u32,
+    pub skipped: Vec<String>,
 }
 
 pub fn get_pool_stats() -> Result<DbPoolStats, String> {
@@ -116,13 +194,18 @@ pub fn get_pool_stats() -> Result<DbPoolStats, String> {
 }
 
 /// Bug 1.5: wrap all inserts in a transaction for atomicity.
+///
+/// Returns an [`ImportResult`] recording how many vars were imported and which
+/// keys were skipped (empty, malformed, or failing key validation) so callers
+/// can surface the skipped keys to the user.
 pub async fn import_env_file_inner(
     pool: &SqlitePool,
     content: &str,
     scope: &str,
-) -> Result<u32, String> {
+) -> Result<ImportResult, String> {
     let mut tx = pool.begin().await.map_err(|e| e.to_string())?;
-    let mut count = 0u32;
+    let mut imported = 0u32;
+    let mut skipped: Vec<String> = Vec::new();
     for line in content.lines() {
         let line = line.trim();
         if line.is_empty() || line.starts_with('#') {
@@ -132,9 +215,11 @@ pub async fn import_env_file_inner(
             let key = k.trim().to_string();
             let value = v.trim().trim_matches('"').trim_matches('\'').to_string();
             if key.is_empty() {
+                // Nothing meaningful to report for a blank key; skip quietly.
                 continue;
             }
             if validate_key(&key).is_err() {
+                skipped.push(key);
                 continue;
             }
             sqlx::query(
@@ -147,11 +232,14 @@ pub async fn import_env_file_inner(
             .execute(&mut *tx)
             .await
             .map_err(|e| e.to_string())?;
-            count += 1;
+            imported += 1;
+        } else {
+            // A non-comment, non-empty line without '=' is malformed.
+            skipped.push(line.to_string());
         }
     }
     tx.commit().await.map_err(|e| e.to_string())?;
-    Ok(count)
+    Ok(ImportResult { imported, skipped })
 }
 
 async fn auto_backup(db_path: &std::path::Path) -> Result<(), String> {
@@ -311,10 +399,11 @@ mod tests {
     async fn test_import_env_file() {
         let pool = test_pool().await;
         let content = "FOO=bar\nBAZ=hello world\n# comment\nEMPTY=\n";
-        let count = import_env_file_inner(&pool, content, "global")
+        let result = import_env_file_inner(&pool, content, "global")
             .await
             .unwrap();
-        assert_eq!(count, 3); // FOO, BAZ, EMPTY
+        assert_eq!(result.imported, 3); // FOO, BAZ, EMPTY
+        assert!(result.skipped.is_empty());
         let rows: Vec<(String, String)> =
             sqlx::query_as("SELECT key, value FROM env_vars ORDER BY key")
                 .fetch_all(&pool)
@@ -325,6 +414,25 @@ mod tests {
         assert_eq!(foo.1, "bar");
         let baz = rows.iter().find(|(k, _)| k == "BAZ").unwrap();
         assert_eq!(baz.1, "hello world");
+    }
+
+    #[tokio::test]
+    async fn test_import_env_file_reports_skipped() {
+        let pool = test_pool().await;
+        // `1BAD` starts with a digit, `has-dash` has a dash, `nokeyvalue` has no '='.
+        let content = "GOOD=1\n1BAD=x\nhas-dash=y\nnokeyvalue\n";
+        let result = import_env_file_inner(&pool, content, "global")
+            .await
+            .unwrap();
+        assert_eq!(result.imported, 1);
+        assert_eq!(
+            result.skipped,
+            vec![
+                "1BAD".to_string(),
+                "has-dash".to_string(),
+                "nokeyvalue".to_string()
+            ]
+        );
     }
 
     #[tokio::test]
@@ -378,10 +486,10 @@ mod tests {
         // Simulate a mid-import failure by using a pool with a closed connection.
         // Instead, verify that a successful import commits all rows atomically.
         let content = "A=1\nB=2\nC=3\n";
-        let count = import_env_file_inner(&pool, content, "global")
+        let result = import_env_file_inner(&pool, content, "global")
             .await
             .unwrap();
-        assert_eq!(count, 3);
+        assert_eq!(result.imported, 3);
         let total: (i64,) = sqlx::query_as("SELECT COUNT(*) FROM env_vars")
             .fetch_one(&pool)
             .await
@@ -434,6 +542,40 @@ mod tests {
         assert!(validate_scope("invalid").is_err());
         assert!(validate_scope("../../etc").is_err());
         assert!(validate_scope("").is_err());
+    }
+
+    #[test]
+    fn test_is_sensitive_matches_real_secrets() {
+        // Whole-segment matches should be flagged.
+        assert!(is_sensitive("API_KEY"));
+        assert!(is_sensitive("DB_PASSWORD"));
+        assert!(is_sensitive("SECRET"));
+        assert!(is_sensitive("GITHUB_TOKEN"));
+        assert!(is_sensitive("aws_secret_access_key"));
+        assert!(is_sensitive("DB_PWD"));
+        assert!(is_sensitive("basic_auth"));
+        assert!(is_sensitive("DOCKER_CREDENTIAL"));
+    }
+
+    #[test]
+    fn test_is_sensitive_ignores_benign_substrings() {
+        // These previously matched because of naive substring checks.
+        assert!(!is_sensitive("MONKEY"));
+        assert!(!is_sensitive("MONKEY_ISLAND"));
+        assert!(!is_sensitive("KEYBOARD_LAYOUT"));
+        assert!(!is_sensitive("BYPASS_CACHE"));
+        assert!(!is_sensitive("PASSAGE"));
+        assert!(!is_sensitive("AUTHOR"));
+        assert!(!is_sensitive("DONKEY"));
+    }
+
+    #[test]
+    fn test_is_sensitive_excludes_public_keys() {
+        assert!(!is_sensitive("PUBLIC_KEY"));
+        assert!(!is_sensitive("SSH_PUB_KEY"));
+        assert!(!is_sensitive("JWT_PUBLIC_KEY"));
+        // ...but a private/secret key is still sensitive.
+        assert!(is_sensitive("PRIVATE_KEY"));
     }
 
     use proptest::prelude::*;

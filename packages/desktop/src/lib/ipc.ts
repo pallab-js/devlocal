@@ -1,12 +1,12 @@
 import { invoke } from "@tauri-apps/api/core";
 import type {
   AppError, AppInfo, ContainerInfo, ContainerDetails, ContainerStats, DockerEvent,
-  EnvVar, HostStats, ImageInfo, LogLine, NetworkContainer, NetworkInfo,
+  EnvVar, HostStats, ImageInfo, ImportResult, LogLine, NetworkContainer, NetworkInfo,
   PullProgress, VolumeInfo, DbSchema, DbQueryResult, DbTable,
 } from "@devopslocal/shared";
 export type {
   AppError, AppInfo, ContainerInfo, ContainerDetails, ContainerStats, DockerEvent,
-  EnvVar, HostStats, ImageInfo, LogLine, NetworkContainer, NetworkInfo,
+  EnvVar, HostStats, ImageInfo, ImportResult, LogLine, NetworkContainer, NetworkInfo,
   PullProgress, VolumeInfo, DbSchema, DbQueryResult, DbTable,
 };
 
@@ -37,8 +37,8 @@ export const ipc = {
   upsertEnvVar: (key: string, value: string, scope: string) =>
     invoke<EnvVar>("upsert_env_var", { key, value, scope }),
   deleteEnvVar: (id: number, scope: string) => invoke<void>("delete_env_var", { id, scope }),
-  importEnvFile: (content: string, scope: string) => invoke<number>("import_env_file", { content, scope }),
-  importSecrets: (content: string, format: string, scope: string) => invoke<number>("import_secrets", { content, format, scope }),
+  importEnvFile: (content: string, scope: string) => invoke<ImportResult>("import_env_file", { content, scope }),
+  importSecrets: (content: string, format: string, scope: string) => invoke<ImportResult>("import_secrets", { content, format, scope }),
   exportEnvScope: (scope: string) => invoke<string>("export_env_scope", { scope }),
   getNetworkTopology: () => invoke<NetworkInfo[]>("get_network_topology"),
   inspectNetwork: (id: string) => invoke<NetworkInfo>("inspect_network", { id }),

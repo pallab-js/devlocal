@@ -12,7 +12,26 @@ use std::time::Instant;
 use sysinfo::System;
 use tauri::Manager;
 
-fn connect_docker() -> Result<bollard::Docker, bollard::errors::Error> {
+/// Connect to the Docker daemon.
+///
+/// If `socket_override` is a non-empty path (from the persisted `docker_socket`
+/// setting), it is tried first. Otherwise we fall back to the macOS Docker
+/// Desktop user socket and then bollard's platform defaults.
+fn connect_docker(
+    socket_override: Option<&str>,
+) -> Result<bollard::Docker, bollard::errors::Error> {
+    if let Some(path) = socket_override {
+        let path = path.trim();
+        if !path.is_empty() {
+            let uri = if path.starts_with("unix://") || path.starts_with("npipe://") {
+                path.to_string()
+            } else {
+                format!("unix://{path}")
+            };
+            return bollard::Docker::connect_with_socket(&uri, 120, bollard::API_DEFAULT_VERSION);
+        }
+    }
+
     #[cfg(target_os = "macos")]
     {
         if let Some(home) = std::env::var_os("HOME") {
@@ -31,17 +50,15 @@ fn connect_docker() -> Result<bollard::Docker, bollard::errors::Error> {
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run(context: tauri::Context) {
-    let docker = connect_docker().ok();
-
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_fs::init())
-        .manage(DockerState(docker.map(Arc::new)))
+        .manage(DockerState(std::sync::RwLock::new(None)))
         .manage(LogStreamState(Mutex::new(HashMap::new())))
         .manage(EventStreamState(Mutex::new(None)))
         .manage(PullState(Mutex::new(None)))
-        .manage(SysState(Mutex::new(System::new())))
+        .manage(SysState(Arc::new(Mutex::new(System::new()))))
         .manage(DiskState(Mutex::new((
             sysinfo::Disks::new_with_refreshed_list(),
             Instant::now(),
@@ -59,13 +76,37 @@ pub fn run(context: tauri::Context) {
                         .blocking_show();
                     std::process::exit(1);
                 }
+
+                // Honor a persisted `docker_socket` override (if any) now that
+                // the DB is available, then connect and store the client.
+                let socket_override = ::db::commands::get_setting("docker_socket".to_string())
+                    .await
+                    .ok()
+                    .flatten();
+                let docker = connect_docker(socket_override.as_deref()).ok();
+                if let Some(docker) = docker {
+                    let docker = Arc::new(docker);
+                    {
+                        let state = handle.state::<DockerState>();
+                        let mut guard = state
+                            .0
+                            .write()
+                            .expect("DockerState lock poisoned during startup");
+                        *guard = Some(Arc::clone(&docker));
+                        drop(guard);
+                    }
+                    // Start Docker health monitor against the live connection.
+                    crate::docker::start_health_monitor(handle.clone(), docker);
+                } else {
+                    eprintln!(
+                        "Docker daemon not reachable; Docker views will show a connection error."
+                    );
+                }
             });
 
-            // Start Docker health monitor
-            let docker_state = app.state::<DockerState>();
-            if let Some(docker) = &docker_state.0 {
-                crate::docker::start_health_monitor(app.handle().clone(), Arc::clone(docker));
-            }
+            // Keep host CPU stats warm so get_host_stats returns instantly.
+            let sys_arc = Arc::clone(&app.state::<SysState>().0);
+            crate::docker::start_host_stats_refresher(sys_arc);
 
             // System tray
             use tauri::menu::{Menu, MenuItem, PredefinedMenuItem};
@@ -152,6 +193,7 @@ mod tests {
         let _ = <AppError as TS>::decl();
         let _ = <AppInfo as TS>::decl();
         let _ = <EnvVar as TS>::decl();
+        let _ = <db::ImportResult as TS>::decl();
         let _ = <ContainerInfo as TS>::decl();
         let _ = <ContainerDetails as TS>::decl();
         let _ = <HostStats as TS>::decl();
