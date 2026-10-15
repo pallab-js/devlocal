@@ -2,12 +2,10 @@ pre-commit:
   commands:
     fmt:
       glob: "*.rs"
-      run: cargo fmt --check
-      working_directory: src-tauri
+      run: cargo fmt --all --check
     clippy:
       glob: "*.rs"
-      run: cargo clippy -- -D warnings
-      working_directory: src-tauri
+      run: cargo clippy --workspace -- -D warnings
     ts-check:
       glob: "*.{ts,tsx}"
-      run: pnpm lint
+      run: pnpm --filter @devopslocal/desktop lint
